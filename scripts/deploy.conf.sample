@@ -24,3 +24,11 @@ REMOTE_PHP="php"
 # Zweig, der ausgerollt werden darf. Schuetzt davor, versehentlich einen
 # Arbeitszweig auf den Server zu schieben.
 DEPLOY_BRANCH="main"
+
+# Oeffentliche Adresse des Log-Betrachters. Ist sie gesetzt, ruft das Skript
+# den Betrachter nach dem Ausrollen ab und prueft, dass er antwortet und die
+# Konfiguration von aussen nicht erreichbar ist. Diese Pruefung ist oertlich
+# nicht zu ersetzen, weil der eingebaute PHP-Webserver keine .htaccess
+# auswertet. Leer lassen schaltet sie ab.
+DEPLOY_URL="https://beispiel.example/"
+

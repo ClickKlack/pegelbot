@@ -221,8 +221,15 @@ Der Ablauf:
    `config.platform.php` abgleichen
 6. Mit `rsync --delete` übertragen. Ausgenommen und dadurch geschützt: beide
    Konfigurationsdateien, `bot/logs/`, `bot/tmp/`, `logviewer/var/`
-7. Laufzeitverzeichnisse anlegen, `logviewer/var/auth` auf 700 setzen, prüfen ob
-   die Konfiguration vorhanden ist und `bot/bootstrap.php` durchläuft
+7. Laufzeitverzeichnisse anlegen, `logviewer/var/auth` auf 700 setzen,
+   Durchgangsrechte zum Dokumentenstamm sicherstellen, prüfen ob die
+   Konfiguration vorhanden ist und `bot/bootstrap.php` durchläuft
+8. Ist `DEPLOY_URL` gesetzt: den Log-Betrachter über HTTP abrufen und prüfen,
+   dass er mit 200 antwortet und `config.php` von außen **nicht** erreichbar ist
+
+Schritt 8 lässt sich örtlich nicht ersetzen — der eingebaute PHP-Webserver wertet
+keine `.htaccess` aus. Fehler in Dateirechten oder Apache-Regeln zeigen sich erst
+gegen den echten Webserver.
 
 Tests, Skripte und `phpunit.xml` bleiben draußen — produktiv wirkt davon nichts.
 

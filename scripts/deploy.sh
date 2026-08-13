@@ -82,6 +82,7 @@ source "$CONFIG_FILE"
 : "${DEPLOY_PATH:?DEPLOY_PATH ist in $CONFIG_FILE nicht gesetzt}"
 REMOTE_PHP="${REMOTE_PHP:-php}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
+DEPLOY_URL="${DEPLOY_URL:-}"
 
 [[ "$DEPLOY_PATH" == /* ]] || fail "DEPLOY_PATH muss ein absoluter Pfad sein."
 [[ "$DEPLOY_PATH" != "/" ]] || fail "DEPLOY_PATH darf nicht das Wurzelverzeichnis sein."
@@ -206,6 +207,12 @@ step "Auslieferungsbaum bauen"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pegelbot-deploy.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
+# mktemp legt mit 700 an, und "rsync -a quelle/ ziel/" uebertraegt die Rechte des
+# Quellverzeichnisses auf das Ziel. Ohne diese Zeile stand das Zielverzeichnis auf
+# dem Server auf 700, der Webserver kam auf keiner Ebene mehr durch und
+# beantwortete jeden Pfad mit 403.
+chmod 755 "$BUILD_DIR"
+
 git archive --format=tar HEAD | tar -x -C "$BUILD_DIR"
 ok "Baum aus Commit $COMMIT erzeugt ($(find "$BUILD_DIR" -type f | wc -l | tr -d ' ') Dateien)"
 
@@ -299,6 +306,13 @@ ssh "$DEPLOY_HOST" "
 " || fail "Anlegen der Laufzeitverzeichnisse fehlgeschlagen."
 ok "Laufzeitverzeichnisse vorhanden, var/auth auf 700"
 
+# Der Webserver muss den Pfad bis zum Dokumentenstamm durchlaufen koennen.
+# Fehlt das Durchgangsrecht auf einer Ebene, antwortet Apache auf jeden Pfad
+# mit 403 - auch auf nicht vorhandene, was die Suche in die Irre fuehrt.
+ssh "$DEPLOY_HOST" "chmod o+x '$DEPLOY_PATH' '$DEPLOY_PATH/logviewer' '$DEPLOY_PATH/logviewer/public'" \
+    || fail "Durchgangsrechte konnten nicht gesetzt werden."
+ok "Durchgangsrechte zum Dokumentenstamm gesetzt"
+
 MISSING=""
 for f in "bot/config/pegelbot-config.php" "logviewer/config.php"; do
     if ! ssh "$DEPLOY_HOST" "test -f '$DEPLOY_PATH/$f'"; then
@@ -319,6 +333,56 @@ else
     else
         fail "bot/bootstrap.php laeuft auf dem Server nicht durch. Konfiguration und Datenbank pruefen."
     fi
+fi
+
+# ---------------------------------------------------------------------------
+#  8. Der Betrachter aus Sicht des Webservers
+# ---------------------------------------------------------------------------
+#
+# Diese Pruefung ist oertlich nicht zu ersetzen: Der eingebaute PHP-Webserver
+# wertet keine .htaccess aus. Fehler in Rechten oder Apache-Regeln zeigen sich
+# erst hier.
+
+if [[ -n "$DEPLOY_URL" ]]; then
+    step "Log-Betrachter abrufen"
+
+    if ! command -v curl >/dev/null; then
+        warn "curl nicht gefunden, Abruf uebersprungen"
+    else
+        HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$DEPLOY_URL/" 2>/dev/null || echo 000)"
+
+        case "$HTTP_CODE" in
+            200)
+                ok "$DEPLOY_URL antwortet mit 200"
+                ;;
+            403)
+                warn "$DEPLOY_URL antwortet mit 403"
+                note "Meist ein fehlendes Durchgangsrecht auf einer Verzeichnisebene"
+                note "oder eine zu weit gefasste Regel in logviewer/public/.htaccess."
+                ;;
+            500)
+                warn "$DEPLOY_URL antwortet mit 500"
+                note "Fehlender Kennwort-Hash in logviewer/config.php oder ein"
+                note "Syntaxfehler in der .htaccess."
+                ;;
+            000)
+                warn "$DEPLOY_URL nicht erreichbar"
+                ;;
+            *)
+                warn "$DEPLOY_URL antwortet mit $HTTP_CODE"
+                ;;
+        esac
+
+        # Die Konfiguration liegt oberhalb des Dokumentenstamms und darf von
+        # aussen nicht erreichbar sein.
+        LEAK_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$DEPLOY_URL/config.php" 2>/dev/null || echo 000)"
+        if [[ "$LEAK_CODE" == "200" ]]; then
+            fail "$DEPLOY_URL/config.php ist abrufbar. Der Dokumentenstamm zeigt auf logviewer/ statt auf logviewer/public/."
+        fi
+        ok "config.php ist von aussen nicht erreichbar (HTTP $LEAK_CODE)"
+    fi
+else
+    note "DEPLOY_URL nicht gesetzt - Abruf des Betrachters uebersprungen"
 fi
 
 # ---------------------------------------------------------------------------
