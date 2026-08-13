@@ -439,6 +439,7 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | S5 | niedrig | Der Kennwortvergleich im Log-Viewer ist nicht laufzeitkonstant. |
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
 | S7 | niedrig | Tabellen- und Klassennamen werden aus Datenbankinhalten zusammengesetzt. Der Inhalt ist zwar selbst verwaltet, das Muster bleibt aber angreifbar. |
+| S9 | **hoch** | **Dieses Dokument ist selbst ein Risiko, sobald das Repository öffentlich ist.** Die Abschnitte 9.1 und 9.2 beschreiben ungeschlossene Schwachstellen eines laufenden Systems, darunter die Schwächen des einzigen über HTTP erreichbaren Bestandteils (S2, S4, S5) und den Umstand, dass dessen Logs E-Mail-Adressen von Abonnenten enthalten. Vor einer öffentlichen Veröffentlichung sind entweder S2/S4/S5 zu schließen oder das Repository ist bis dahin privat zu halten. |
 | S8 | **hoch** | Alle Kanal-Zugangsdaten liegen **unverschlüsselt** in der Datenbank: OAuth-Schlüssel und -Geheimnisse (Twitter), Anwendungskennwörter (Bluesky), Zugriffsmarken (Mastodon). Ein Datenbankauszug — etwa der zur Fehlersuche erstellte — gibt damit sämtliche Konten preis. Auszüge dieser Tabellen dürfen niemals versioniert oder weitergegeben werden. |
 
 Positiv anzumerken: Die Pfadprüfung der Viewer-Endpunkte (`basename()` in Kombination mit
@@ -493,7 +494,9 @@ ab. **Das ist der vorgesehene erste Testfall.**
 - ~~Lizenz, README, SPEC, Entwicklungskonventionen anlegen~~
 - ~~SAPI-Wache im Einstiegspunkt~~
 - ~~`git init` und erste Übernahme~~
-- Codeberg als Gegenstelle einrichten und übertragen — **offen**
+- GitHub als Gegenstelle einrichten und übertragen — **teilweise**, Gegenstelle
+  `origin` zeigt auf `https://github.com/ClickKlack/pegelbot`, die Übertragung steht aus
+  (siehe S9)
 
 ### Stufe 1 — Reproduzierbarkeit
 
@@ -525,7 +528,10 @@ Je ein Commit pro Schritt, jeweils testbegleitet:
 
 ### Stufe 4 — Automatisierung
 
-- Codeberg CI (Woodpecker): Lint, PHPUnit, PHPStan
+- GitHub Actions: Lint, PHPUnit, PHPStan (über `shivammathur/setup-php`)
+- Einstiegspunkt nach `bot/bin/pegelbot` verschieben; der Cron-Eintrag wird in diesem
+  Schritt ohnehin angefasst
+- Ausrollen per `git pull` über SSH
 
 ---
 
