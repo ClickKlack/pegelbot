@@ -1,10 +1,22 @@
 <?php
-// ============================================================
-//  K O N F I G U R A T I O N
+
+declare(strict_types=1);
+
+// ============================================================================
+//  Log-Betrachter
 //
-//  Die Werte stehen in ../config.php, also ausserhalb des Dokumentenstamms
-//  und damit ausser Reichweite des Webservers. Vorlage: config.sample.php
-// ============================================================
+//  Die Anmeldung uebernimmt der Webserver per HTTP-Basic-Auth, siehe .htaccess.
+//  Diese Datei enthaelt deshalb keinerlei Kennwortlogik mehr.
+// ============================================================================
+
+use LogViewer\LogReader;
+
+// LogReader hat keine externen Abhaengigkeiten und wird bewusst direkt geladen,
+// damit logviewer/ auch ohne Composer-Autoload ausgerollt werden kann.
+require_once __DIR__ . '/../src/LogReader.php';
+
+// ---------- Konfiguration ----------
+// Liegt oberhalb des Dokumentenstamms und ist damit nicht ueber HTTP erreichbar.
 $configFile = __DIR__ . '/../config.php';
 
 if (!is_readable($configFile)) {
@@ -14,160 +26,57 @@ if (!is_readable($configFile)) {
 
 $config = require $configFile;
 
-$logFolder = $config['logFolder'];   // Verzeichnis der Logdateien
-$logPrefix = $config['logPrefix'];   // Dateiname-Präfix: pegelbot-YYYY-MM-DD.log
-$password  = $config['password'];    // Zugriffskennwort (leer lassen = kein Schutz)
-$tailLines = $config['tailLines'];   // Maximale Zeilen pro Datei bei Zusammenfassung
-$interval  = $config['interval'];    // Auto-Refresh in ms (min. 500)
-$timezone  = $config['timezone'];
-// ============================================================
+$logPrefix = (string) $config['logPrefix'];   // Dateiname-Präfix: pegelbot-YYYY-MM-DD.log
+$tailLines = (int) $config['tailLines'];      // Maximale Zeilen pro Datei
+$interval  = (int) $config['interval'];       // Auto-Refresh in ms, mindestens 500
+$timezone  = (string) $config['timezone'];
+
+// ---------- Sicherung der Anmeldung ----------
+// Die Anmeldung erledigt der Webserver. Faellt die .htaccess beim Ausrollen unter
+// den Tisch, waere der Betrachter ohne diese Pruefung still und leise offen - und
+// er liefert Logs aus, die E-Mail-Adressen von Abonnenten enthalten. Lieber
+// sichtbar kaputt als unbemerkt offen.
+if (($config['requireAuth'] ?? true) === true) {
+    // Je nach PHP-Anbindung (Modul, CGI, FastCGI) steht der angemeldete Benutzer
+    // in einer anderen Variablen.
+    $authUser = $_SERVER['PHP_AUTH_USER']
+        ?? $_SERVER['REMOTE_USER']
+        ?? $_SERVER['REDIRECT_REMOTE_USER']
+        ?? '';
+
+    if ($authUser === '') {
+        http_response_code(500);
+        exit(
+            'Zugriffsschutz nicht aktiv. Bitte .htaccess einrichten '
+            . '(Vorlage: .htaccess.sample) oder requireAuth in config.php abschalten.'
+        );
+    }
+}
 
 date_default_timezone_set($timezone);
-if ($interval < 500) $interval = 500;
 
-// ---------- Session / Passwortschutz ----------
-if ($password !== "") {
-    session_start();
-    if (isset($_POST['logout'])) {
-        session_destroy();
-        header("Location: " . $_SERVER['PHP_SELF']);
-        exit;
-    }
-    if (isset($_POST['pw'])) {
-        if ($_POST['pw'] === $password) {
-            $_SESSION['auth'] = true;
-        } else {
-            $_SESSION['auth_error'] = true;
-        }
-        header("Location: " . $_SERVER['PHP_SELF']);
-        exit;
-    }
-    if (empty($_SESSION['auth'])) {
-        // Login-Seite ausgeben
-        $error = !empty($_SESSION['auth_error']);
-        unset($_SESSION['auth_error']);
-        ?><!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Log Viewer · Login</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #0a0c10;
-    background-image: radial-gradient(ellipse at 20% 50%, rgba(0,200,120,0.07) 0%, transparent 60%),
-                      radial-gradient(ellipse at 80% 20%, rgba(0,150,255,0.05) 0%, transparent 50%);
-    font-family: 'JetBrains Mono', monospace;
-    color: #c9d1d9;
-  }
-  .login-box {
-    width: 340px;
-    border: 1px solid #21262d;
-    border-radius: 6px;
-    padding: 2.5rem 2rem;
-    background: #161b22;
-    box-shadow: 0 16px 48px rgba(0,0,0,0.6);
-  }
-  .login-box h1 {
-    font-size: 1rem; font-weight: 700; margin-bottom: 0.3rem;
-    color: #58a6ff; letter-spacing: 0.05em;
-  }
-  .login-box p { font-size: 0.72rem; color: #6e7681; margin-bottom: 2rem; }
-  label { display: block; font-size: 0.75rem; color: #8b949e; margin-bottom: 0.4rem; }
-  input[type=password] {
-    width: 100%; padding: 0.6rem 0.8rem;
-    background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
-    color: #c9d1d9; font-family: inherit; font-size: 0.9rem;
-    outline: none; transition: border-color .2s;
-  }
-  input[type=password]:focus { border-color: #58a6ff; }
-  button[type=submit] {
-    margin-top: 1.2rem; width: 100%; padding: 0.65rem;
-    background: #238636; border: none; border-radius: 4px;
-    color: #fff; font-family: inherit; font-size: 0.85rem;
-    font-weight: 700; cursor: pointer; transition: background .2s;
-    letter-spacing: 0.04em;
-  }
-  button[type=submit]:hover { background: #2ea043; }
-  .error-msg {
-    margin-top: 1rem; padding: 0.5rem 0.8rem;
-    background: rgba(248,81,73,0.15); border: 1px solid rgba(248,81,73,0.4);
-    border-radius: 4px; font-size: 0.78rem; color: #f85149;
-  }
-</style>
-</head>
-<body>
-<div class="login-box">
-  <h1>// LOG VIEWER</h1>
-  <p><?php echo htmlspecialchars($logPrefix); ?>-YYYY-MM-DD.log</p>
-  <form method="post">
-    <label for="pw">Passwort</label>
-    <input type="password" id="pw" name="pw" autofocus autocomplete="current-password">
-    <button type="submit">Einloggen →</button>
-    <?php if ($error): ?>
-      <div class="error-msg">⚠ Falsches Passwort</div>
-    <?php endif; ?>
-  </form>
-</div>
-</body>
-</html><?php
-        exit;
-    }
+if ($interval < 500) {
+    $interval = 500;
 }
 
-// ---------- Hilfsfunktionen ----------
-
-function getLogFiles(string $folder, string $prefix): array {
-    $pattern = $folder . $prefix . '-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].log';
-    $files = glob($pattern);
-    if (!$files) return [];
-    rsort($files); // neueste zuerst
-    return $files;
-}
-
-function tailFile(string $path, int $lines): array {
-    if (!is_readable($path)) return [];
-    $file = new SplFileObject($path);
-    $file->seek(PHP_INT_MAX);
-    $total = $file->key();
-    $start = max(0, $total - $lines);
-    $out = [];
-    $file->seek($start);
-    while (!$file->eof()) {
-        $line = rtrim($file->current());
-        if ($line !== '') $out[] = $line;
-        $file->next();
-    }
-    return $out;
-}
-
-function fileDate(string $path, string $prefix): string {
-    $base = basename($path, '.log');
-    $date = substr($base, strlen($prefix) + 1); // YYYY-MM-DD
-    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $m)) {
-        $ts = mktime(0, 0, 0, (int)$m[2], (int)$m[3], (int)$m[1]);
-        return date('d.m.Y', $ts);
-    }
-    return $date;
-}
+$reader = new LogReader((string) $config['logFolder'], $logPrefix);
 
 // ---------- AJAX-Endpunkte ----------
 
 if (isset($_GET['api'])) {
     header('Content-Type: application/json; charset=utf-8');
-    $files = getLogFiles($logFolder, $logPrefix);
+
+    $todayFile = $reader->fileNameForDay();
 
     if ($_GET['api'] === 'list') {
         $list = [];
-        foreach ($files as $f) {
+        foreach ($reader->listFiles() as $path) {
+            $name = basename($path);
             $list[] = [
-                'path'  => basename($f),
-                'label' => fileDate($f, $logPrefix),
-                'size'  => filesize($f),
-                'today' => basename($f) === $logPrefix . '-' . date('Y-m-d') . '.log',
+                'path'  => $name,
+                'label' => $reader->formatDate($path),
+                'size'  => $reader->fileSize($path),
+                'today' => $name === $todayFile,
             ];
         }
         echo json_encode($list);
@@ -175,35 +84,42 @@ if (isset($_GET['api'])) {
     }
 
     if ($_GET['api'] === 'file' && !empty($_GET['name'])) {
-        // Sicherheit: nur erlaubte Dateinamen
-        $name = basename($_GET['name']);
-        if (!preg_match('/^' . preg_quote($logPrefix, '/') . '-\d{4}-\d{2}-\d{2}\.log$/', $name)) {
-            http_response_code(400); echo json_encode(['error' => 'invalid']);
+        // Die Pruefung des Dateinamens steckt im LogReader und ist dort getestet
+        $path = $reader->resolvePath((string) $_GET['name']);
+
+        if ($path === null) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid']);
             exit;
         }
-        $path = $logFolder . $name;
-        $lines = tailFile($path, $tailLines);
-        echo json_encode(['lines' => $lines, 'label' => fileDate($path, $logPrefix)]);
+
+        echo json_encode([
+            'lines' => $reader->tail($path, $tailLines),
+            'label' => $reader->formatDate($path),
+        ]);
         exit;
     }
 
     if ($_GET['api'] === 'combined') {
-        $limit = isset($_GET['limit']) ? max(1, min(10, (int)$_GET['limit'])) : 3;
+        $limit  = isset($_GET['limit']) ? max(1, min(10, (int) $_GET['limit'])) : 3;
         $result = [];
-        foreach (array_slice($files, 0, $limit) as $f) {
-            $lines = tailFile($f, $tailLines);
+
+        foreach (array_slice($reader->listFiles(), 0, $limit) as $path) {
+            $name = basename($path);
             $result[] = [
-                'label' => fileDate($f, $logPrefix),
-                'name'  => basename($f),
-                'lines' => $lines,
-                'today' => basename($f) === $logPrefix . '-' . date('Y-m-d') . '.log',
+                'label' => $reader->formatDate($path),
+                'name'  => $name,
+                'lines' => $reader->tail($path, $tailLines),
+                'today' => $name === $todayFile,
             ];
         }
+
         echo json_encode($result);
         exit;
     }
 
-    http_response_code(400); echo json_encode(['error' => 'unknown api']);
+    http_response_code(400);
+    echo json_encode(['error' => 'unknown api']);
     exit;
 }
 ?><!DOCTYPE html>
@@ -597,11 +513,8 @@ body, .sidebar, .topbar, .search-bar, .sidebar-header,
     </div>
 
     <div class="sidebar-footer">
-      <?php if ($password !== ""): ?>
-      <form method="post" style="flex:1">
-        <button type="submit" name="logout" value="1" class="logout-btn">Ausloggen</button>
-      </form>
-      <?php endif; ?>
+      <!-- Kein Abmelde-Knopf: Die Anmeldung liegt beim Webserver (HTTP-Basic-Auth).
+           Zum Abmelden das Browserfenster schliessen. -->
       <div class="refresh-indicator" id="refresh-dot" title="Auto-Refresh"></div>
     </div>
   </aside>

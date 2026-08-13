@@ -1,0 +1,32 @@
+# ============================================================================
+#  Zugriffsschutz des Log-Betrachters
+#
+#  Vorlage. Zum Einrichten kopieren und den Pfad anpassen:
+#
+#      cp .htaccess.sample .htaccess
+#
+#  Kennwortdatei anlegen - bewusst OBERHALB des Dokumentenstamms, damit sie
+#  nicht ueber HTTP abrufbar ist:
+#
+#      htpasswd -c <pfad-zu>/logviewer/.htpasswd <benutzername>
+#
+#  AuthUserFile verlangt einen absoluten Pfad. Deshalb ist diese Datei eine
+#  Vorlage und die fertige .htaccess wird nicht versioniert.
+# ============================================================================
+
+AuthType Basic
+AuthName "Pegelbot Log Viewer"
+AuthUserFile /absoluter/pfad/zu/logviewer/.htpasswd
+Require valid-user
+
+# Bei FastCGI reicht der Webserver den angemeldeten Benutzer nicht immer an PHP
+# durch. Diese Regel stellt ihn als REMOTE_USER bereit, damit die Sicherung in
+# index.php greifen kann.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} ^(.*)$
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+# Verzeichnisauflistung abschalten
+Options -Indexes

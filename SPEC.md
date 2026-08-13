@@ -32,7 +32,10 @@ Das Projekt besteht aus zwei technisch unabhängigen Anwendungen:
 | Komponente  | Verzeichnis  | Art               | Umfang       |
 | ----------- | ------------ | ----------------- | ------------ |
 | Pegelbot    | `bot/`  | CLI, per Cron     | ~1.100 Zeilen PHP |
-| Log-Viewer  | `logviewer/` | Web (Single-File) | 882 Zeilen   |
+| Log-Viewer  | `logviewer/` | Web               | ~800 Zeilen, überwiegend CSS und JavaScript |
+
+Der Log-Viewer besteht aus `public/index.php` (Darstellung und JSON-Endpunkte) und
+`src/LogReader.php` (Dateizugriffe, durch Unit-Tests abgedeckt).
 
 Beide teilen sich weder Code noch Konfiguration. Die einzige Kopplung ist das
 Log-Verzeichnis, das der Bot beschreibt und der Viewer liest.
@@ -388,9 +391,19 @@ Die Datei liegt **oberhalb** des Dokumentenstamms `logviewer/public/` und ist da
 HTTP nicht erreichbar. Fehlt sie, antwortet der Betrachter mit HTTP 500 und einem Hinweis
 statt mit einem Fehler des PHP-Interpreters.
 
-Der Viewer bietet drei JSON-Endpunkte (`list`, `file`, `combined`), eine
-Sitzungs-Passwortsperre und eine Oberfläche mit Hell-/Dunkelmodus, Loglevel-Filter,
-Volltextsuche und automatischer Aktualisierung.
+Der Viewer bietet drei JSON-Endpunkte (`list`, `file`, `combined`) und eine Oberfläche
+mit Hell-/Dunkelmodus, Loglevel-Filter, Volltextsuche und automatischer Aktualisierung.
+
+**Zugriffsschutz:** HTTP-Basic-Auth durch den Webserver, konfiguriert über
+`logviewer/public/.htaccess` (Vorlage `.htaccess.sample`). Die Kennwortdatei liegt als
+`logviewer/.htpasswd` oberhalb des Dokumentenstamms. Beide Dateien sind
+serverspezifisch und werden nicht versioniert.
+
+Solange `requireAuth` gesetzt ist, bricht `index.php` mit HTTP 500 ab, wenn der
+Webserver keinen angemeldeten Benutzer durchreicht. Damit wird eine beim Ausrollen
+vergessene `.htaccess` zu einem sichtbaren Fehler statt zu einem unbemerkt offenen
+Zugang. Geprüft werden `PHP_AUTH_USER`, `REMOTE_USER` und `REDIRECT_REMOTE_USER`, weil
+die Variable je nach PHP-Anbindung abweicht.
 
 ---
 
@@ -433,13 +446,13 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | Nr. | Schwere | Beschreibung |
 | --- | ------- | ------------ |
 | S1 | **kritisch** | `bot/config/pegelbot-config.php` enthält echte Datenbank-Zugangsdaten und darf niemals versioniert werden. |
-| S2 | **kritisch** | `logviewer/public/index.php` enthält das Zugriffskennwort im Klartext im Quelltext. Es muss ausgelagert **und gewechselt** werden. |
+| ~~S2~~ | **behoben** 13.08.2026 | Das Zugriffskennwort stand im Klartext im Quelltext. Die Anmeldung liegt jetzt beim Webserver (HTTP-Basic-Auth), der Quelltext enthält keine Kennwortlogik mehr. Das alte Kennwort gilt als kompromittiert und wird nicht weiterverwendet. |
 | S3 | mittel | Absolute Serverpfade in `logviewer/public/index.php`, `bot/.htaccess` und `bot/deletelog.sh` geben Infrastrukturdetails preis. |
-| S4 | mittel | Der Log-Viewer hat keine Begrenzung der Anmeldeversuche, keinen CSRF-Schutz und erneuert die Sitzungskennung nach der Anmeldung nicht. |
-| S5 | niedrig | Der Kennwortvergleich im Log-Viewer ist nicht laufzeitkonstant. |
+| ~~S4~~ | **behoben** 13.08.2026 | Fehlende Begrenzung der Anmeldeversuche, kein CSRF-Schutz, keine Sitzungserneuerung. Mit dem Wegfall der eigenen Sitzungslogik entfallen alle drei Punkte; die Absicherung obliegt dem Webserver. |
+| ~~S5~~ | **behoben** 13.08.2026 | Der nicht laufzeitkonstante Kennwortvergleich existiert nicht mehr. |
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
 | S7 | niedrig | Tabellen- und Klassennamen werden aus Datenbankinhalten zusammengesetzt. Der Inhalt ist zwar selbst verwaltet, das Muster bleibt aber angreifbar. |
-| S9 | **hoch** | **Dieses Dokument ist selbst ein Risiko, sobald das Repository öffentlich ist.** Die Abschnitte 9.1 und 9.2 beschreiben ungeschlossene Schwachstellen eines laufenden Systems, darunter die Schwächen des einzigen über HTTP erreichbaren Bestandteils (S2, S4, S5) und den Umstand, dass dessen Logs E-Mail-Adressen von Abonnenten enthalten. Vor einer öffentlichen Veröffentlichung sind entweder S2/S4/S5 zu schließen oder das Repository ist bis dahin privat zu halten. |
+| ~~S9~~ | **entschärft** 13.08.2026 | Das Dokument beschrieb ungeschlossene Schwachstellen eines laufenden Systems und war damit vor einer Veröffentlichung selbst ein Risiko. Mit der Behebung von S2, S4 und S5 beschreibt es an dieser Stelle nur noch geschlossene Befunde. Vor der Übertragung ist zu prüfen, ob neu hinzugekommene offene Befunde denselben Vorbehalt auslösen. |
 | S8 | **hoch** | Alle Kanal-Zugangsdaten liegen **unverschlüsselt** in der Datenbank: OAuth-Schlüssel und -Geheimnisse (Twitter), Anwendungskennwörter (Bluesky), Zugriffsmarken (Mastodon). Ein Datenbankauszug — etwa der zur Fehlersuche erstellte — gibt damit sämtliche Konten preis. Auszüge dieser Tabellen dürfen niemals versioniert oder weitergegeben werden. |
 
 Positiv anzumerken: Die Pfadprüfung der Viewer-Endpunkte (`basename()` in Kombination mit

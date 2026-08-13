@@ -1,0 +1,28 @@
+{
+    "name": "clickklack/pegelbot",
+    "description": "Entwicklungswerkzeuge und Testrahmen des Gesamtprojekts. Die Laufzeit-Abhaengigkeiten des Bots stehen in bot/composer.json, weil bot/ und logviewer/ getrennt ausgerollt werden.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "LogViewer\\": "logviewer/src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

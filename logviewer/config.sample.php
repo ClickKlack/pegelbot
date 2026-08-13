@@ -10,7 +10,8 @@ declare(strict_types=1);
 //
 //      cp config.sample.php config.php
 //
-//  config.php enthaelt das Zugangskennwort und wird nicht versioniert.
+//  Die Anmeldung selbst erledigt der Webserver per HTTP-Basic-Auth, siehe
+//  public/.htaccess.sample. Hier steht kein Kennwort mehr.
 // ============================================================================
 
 return [
@@ -20,9 +21,11 @@ return [
     // Dateinamenpraefix; erwartet wird das Muster praefix-YYYY-MM-DD.log
     'logPrefix' => 'pegelbot',
 
-    // Zugangskennwort. Leer lassen schaltet den Schutz ab - nur sinnvoll,
-    // wenn der Zugriff bereits ueber den Webserver abgesichert ist.
-    'password'  => 'hier-ein-eigenes-kennwort-eintragen',
+    // Bricht ab, wenn der Webserver keinen angemeldeten Benutzer durchreicht.
+    // Nur abschalten, wenn der Zugriff anderweitig eingeschraenkt ist, etwa
+    // ueber eine IP-Freigabe. Ohne Schutz waeren die Logdateien samt der darin
+    // enthaltenen E-Mail-Adressen oeffentlich abrufbar.
+    'requireAuth' => true,
 
     // Maximale Anzahl Zeilen, die je Datei ausgeliefert wird
     'tailLines' => 1000,

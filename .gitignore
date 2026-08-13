@@ -3,11 +3,18 @@
 # ============================================================================
 
 # --- Konfiguration mit Zugangsdaten -----------------------------------------
-# Zu jeder dieser Dateien gehoert eine versionierte Vorlage *.sample.php
+# Zu jeder dieser Dateien gehoert eine versionierte Vorlage
 /bot/config/pegelbot-config.php
 /logviewer/config.php
 
+# --- Zugriffsschutz des Log-Betrachters -------------------------------------
+# AuthUserFile verlangt einen absoluten Pfad, deshalb ist die fertige .htaccess
+# serverspezifisch. Vorlage: logviewer/public/.htaccess.sample
+/logviewer/public/.htaccess
+/logviewer/.htpasswd
+
 # --- Composer-Artefakte -----------------------------------------------------
+/vendor/
 /bot/vendor/
 
 # --- Laufzeitdaten ----------------------------------------------------------
@@ -32,5 +39,6 @@ Thumbs.db
 *~
 
 # --- Testwerkzeuge ----------------------------------------------------------
+/.phpunit.cache/
 /.phpunit.result.cache
 /coverage/

@@ -107,14 +107,20 @@ Hell-/Dunkelmodus. Der Zugriff ist durch ein Kennwort geschützt.
 ```bash
 cd logviewer
 cp config.sample.php config.php
+cp public/.htaccess.sample public/.htaccess
+htpasswd -c .htpasswd <benutzername>
 ```
 
-In `config.php` das Logverzeichnis des Bots und ein Zugangskennwort eintragen. Die Datei
-liegt bewusst **oberhalb** von `public/` und ist damit über HTTP nicht erreichbar; sie
-wird nicht versioniert.
+In `config.php` das Logverzeichnis des Bots eintragen, in `public/.htaccess` den
+absoluten Pfad zur `.htpasswd`. Beide Dateien liegen **oberhalb** von `public/`
+beziehungsweise sind serverspezifisch und werden nicht versioniert.
+
+Die Anmeldung übernimmt der Webserver per HTTP-Basic-Auth. Reicht er keinen
+angemeldeten Benutzer durch, bricht der Betrachter mit HTTP 500 ab, statt die Logs
+ungeschützt auszuliefern.
 
 > Der Dokumentenstamm der Subdomain muss auf `logviewer/public/` zeigen — nicht auf
-> `logviewer/`. Andernfalls wäre `config.php` samt Kennwort abrufbar.
+> `logviewer/`. Andernfalls wären `config.php` und `.htpasswd` abrufbar.
 
 ---
 
@@ -127,6 +133,20 @@ Kanäle werden über die Datenbank registriert. Ein neuer Kanal `beispiel` benö
 3. Eine Tabelle `abonnements_beispiel` mit den Zugangsdaten der Abonnements.
 
 Kanäle, die keine Bilder verschicken können, überschreiben `supportsTrend()` mit `false`.
+
+---
+
+## Tests
+
+```bash
+composer install
+composer test
+```
+
+Die Testsuite liegt in `tests/`, das Testgerüst ist PHPUnit. Die Entwicklungswerkzeuge
+stehen in der `composer.json` im Projektwurzelverzeichnis; die Laufzeit-Abhängigkeiten
+des Bots bleiben davon getrennt in `bot/composer.json`, weil beide Komponenten
+unabhängig voneinander ausgerollt werden.
 
 ---
 
