@@ -187,21 +187,82 @@ die Bibliotheksfassungen, die auch produktiv arbeiten.
 
 ## Ausrollen
 
-Ein Klon des Repositorys, zwei Ziele darin:
+```bash
+cp scripts/deploy.conf.sample scripts/deploy.conf   # einmalig, nicht versioniert
+scripts/deploy.sh --dry-run                          # zeigt an, was übertragen würde
+scripts/deploy.sh
+```
+
+Auf dem Zielserver liegt ein Verzeichnis mit zwei Zielen darin:
 
 | Ziel | Zeigt auf |
 | ---- | --------- |
-| Cron-Eintrag | `<klon>/bot/main.php` |
-| Dokumentenstamm der Log-Subdomain | `<klon>/logviewer/public/` |
+| Cron-Eintrag | `<ziel>/bot/main.php` |
+| Dokumentenstamm der Log-Subdomain | `<ziel>/logviewer/public/` |
 
-```bash
-cd <klon>
-git pull
-composer install --no-dev
-```
+### Was das Skript tut
 
-Die beiden Konfigurationsdateien und `logviewer/var/` bleiben davon unberührt, weil
-sie nicht versioniert sind.
+Übertragen wird ein Baum, den `git archive` aus dem aktuellen Commit erzeugt.
+**Unversioniertes kann damit gar nicht auf den Server gelangen** — weder eine
+vergessene Arbeitsdatei noch eine Konfiguration mit Zugangsdaten. Die Frage „ist
+alles im Git" beantwortet sich durch die Bauweise, nicht durch eine Zusatzprüfung.
+
+Der Ablauf:
+
+1. Zweig prüfen, sauberes Arbeitsverzeichnis verlangen, auf nicht übertragene
+   Commits hinweisen
+2. Sicherstellen, dass keine Konfigurationsdatei mit Zugangsdaten im Git-Index oder
+   im auszurollenden Commit steht
+3. `composer validate`, Testsuite, `composer audit`
+4. Auslieferungsbaum aus dem Commit bauen, Abhängigkeiten mit `--no-dev`
+   dazupacken — der Server braucht kein Composer und bekommt genau die Fassungen,
+   gegen die getestet wurde
+5. Erreichbarkeit und PHP-Version des Servers prüfen, Letztere gegen
+   `config.platform.php` abgleichen
+6. Mit `rsync --delete` übertragen. Ausgenommen und dadurch geschützt: beide
+   Konfigurationsdateien, `bot/logs/`, `bot/tmp/`, `logviewer/var/`
+7. Laufzeitverzeichnisse anlegen, `logviewer/var/auth` auf 700 setzen, prüfen ob
+   die Konfiguration vorhanden ist und `bot/bootstrap.php` durchläuft
+
+Tests, Skripte und `phpunit.xml` bleiben draußen — produktiv wirkt davon nichts.
+
+**Ein vollständiger Botlauf wird nicht ausgelöst**, weil er echte Benachrichtigungen
+verschicken würde. Das Skript prüft nur, ob der Bot startet und die Datenbank
+erreicht.
+
+### Optionen
+
+| Option | Wirkung |
+| ------ | ------- |
+| `--dry-run` | Alle Prüfungen, Übertragung nur simuliert |
+| `--skip-tests` | Testsuite überspringen |
+| `--allow-unpushed` | Trotz nicht übertragener Commits fortfahren |
+| `--yes` | Ohne Rückfrage übertragen |
+
+`scripts/deploy.conf` enthält SSH-Ziel und Serverpfad und wird **nicht** versioniert.
+Das Skript bricht ab, falls die Datei doch im Git-Index auftaucht.
+
+---
+
+## Mitwirken
+
+Die verbindlichen Entwicklungskonventionen stehen in [CLAUDE.md](CLAUDE.md). Kurzfassung:
+
+- Bezeichner in **Englisch**, Kommentare in **Deutsch**
+- `declare(strict_types=1);` in jeder Datei
+- Zu jeder Änderung gehören **Unit-Tests**
+- Jede Änderung wird zusätzlich per **Smoke-Test** bestätigt
+- Ein Commit, ein Anliegen — Commit-Nachrichten auf Deutsch
+
+---
+
+## Datenquelle
+
+Die Messwerte stammen von [PEGELONLINE](https://www.pegelonline.wsv.de/) der
+Wasserstraßen- und Schifffahrtsverwaltung des Bundes. Die Daten werden unentgeltlich
+bereitgestellt; die Nutzungsbedingungen der WSV sind zu beachten. Es besteht kein
+Anspruch auf Richtigkeit oder Verfügbarkeit — die Werte sind für amtliche oder
+sicherheitsrelevante Zwecke nicht geeignet.
 
 ---
 

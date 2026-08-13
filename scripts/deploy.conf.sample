@@ -1,0 +1,26 @@
+# ============================================================================
+#  Konfiguration des Ausrollskripts.
+#
+#  Zum Einrichten kopieren:
+#
+#      cp scripts/deploy.conf.sample scripts/deploy.conf
+#
+#  scripts/deploy.conf enthaelt Angaben zum Zielsystem und wird NICHT
+#  versioniert. Das Skript verweigert den Dienst, falls die Datei doch im
+#  Git-Index auftaucht.
+# ============================================================================
+
+# Ziel der Uebertragung. Ueblicherweise ein Alias aus ~/.ssh/config, damit
+# hier weder Benutzername noch Rechnername stehen muessen.
+DEPLOY_HOST="mein-ssh-alias"
+
+# Absoluter Pfad des Zielverzeichnisses auf dem Server.
+DEPLOY_PATH="/pfad/zum/zielverzeichnis"
+
+# PHP-Programm auf dem Server. Bei mehreren installierten Fassungen die
+# gewuenschte ausdruecklich angeben, etwa /usr/bin/php85.
+REMOTE_PHP="php"
+
+# Zweig, der ausgerollt werden darf. Schuetzt davor, versehentlich einen
+# Arbeitszweig auf den Server zu schieben.
+DEPLOY_BRANCH="main"

@@ -11,6 +11,10 @@
 # Zaehler der Anmelde-Fehlversuche
 /logviewer/var/
 
+# --- Angaben zum Zielsystem des Ausrollskripts ------------------------------
+# Enthaelt SSH-Ziel und Serverpfad. Vorlage: scripts/deploy.conf.sample
+/scripts/deploy.conf
+
 # --- Composer-Artefakte -----------------------------------------------------
 /vendor/
 
