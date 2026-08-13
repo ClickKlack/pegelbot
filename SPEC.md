@@ -43,9 +43,16 @@ Log-Verzeichnis, das der Bot beschreibt und der Viewer liest.
 ### 1.2 Betriebsumgebung
 
 - Shared Hosting, Pfadcontainer `<hosting-home>/public_html/wasserstrassenkreuz.de/`
-- Ausführung **stündlich zur Minute :05** (nachgewiesen über 24 `Start`-Einträge pro Logtag)
+- Ausführung **stündlich zur Minute :05**
 - Datenbank: MariaDB 10.11.18
-- PHP: **8.4.24** in der Produktion, Zielversion ab **8.4** (siehe `CLAUDE.md`)
+- PHP: **8.4.24** in der Produktion, Zielversion ab **8.4** (siehe `CLAUDE.md`).
+  Der Hoster stellt auch 8.5 bereit; ein Umstieg ist zurückgestellt.
+
+Der Cron-Aufruf ist vom Hoster in `flock -n` gekapselt. **Überlappende Läufe sind
+dadurch ausgeschlossen** — startet ein Lauf, während der vorige noch arbeitet, endet
+er sofort. Das entschärft die Befunde B6 und B8, deren Auslöser gleichzeitige Läufe
+wären. Es beseitigt sie nicht: Beide bleiben als Fehler bestehen, ihr wahrscheinlichster
+Auslöser ist aber betrieblich abgeräumt.
 
 ### 1.3 Ablagetopologie
 
@@ -53,24 +60,33 @@ Bestätigt am 13.08.2026. Das Verzeichnis `public_html/wasserstrassenkreuz.de/` 
 diesem Hoster **kein Dokumentenstamm**, sondern lediglich ein Container. Jede Domain und
 Subdomain besitzt darunter ihren eigenen Dokumentenstamm.
 
-| Verzeichnis | Über HTTP erreichbar | Anmerkung |
-| ----------- | -------------------- | --------- |
-| `…/pegel2/`    | **nein** | Der Bot liegt in keinem Dokumentenstamm. |
-| `…/pegel_log/` | **ja**, als `pegel-log` | Eigener Dokumentenstamm für den Log-Betrachter. |
-| `…/www…/`      | ja  | Dokumentenstamm von `www.wasserstrassenkreuz.de`, für dieses Projekt ohne Belang. |
+Seit dem 13.08.2026 liegt das gesamte Projekt in **einem** Verzeichnis `…/pegelbot/`,
+das per `scripts/deploy.sh` aus dem Repository befüllt wird.
+
+| Pfad | Über HTTP erreichbar | Anmerkung |
+| ---- | -------------------- | --------- |
+| `…/pegelbot/` | **nein** | Wurzel der Auslieferung. Braucht `o+x`, damit der Webserver bis zum Dokumentenstamm durchkommt. |
+| `…/pegelbot/bot/` | **nein** | Der Bot, aufgerufen per Cron. |
+| `…/pegelbot/logviewer/` | **nein** | Enthält `config.php` mit dem Kennwort-Hash. |
+| `…/pegelbot/logviewer/public/` | **ja**, als `pegel-log` | Dokumentenstamm der Subdomain. Enthält nur `index.php` und `.htaccess`. |
+
+Die Vorgängerverzeichnisse `…/pegel2/` und `…/pegel_log/` sind abgelöst und können
+entfernt werden; siehe offener Punkt O12.
 
 Daraus folgt:
 
 - `main.php` lässt sich **nicht** über HTTP auslösen. Eine SAPI-Wache im Einstiegspunkt
-  ist trotzdem sinnvoll, damit eine spätere Umkonfiguration des Hosters diese Zusicherung
-  nicht stillschweigend aufhebt.
-- Weder `pegelbot-config.php` noch `logs/` sind über HTTP abrufbar. Die
-  Zugangsdaten und die in den Logs enthaltenen Abonnenten-Adressen sind
-  **nicht** exponiert.
+  sichert das zusätzlich ab, falls eine spätere Umkonfiguration die Zusicherung
+  stillschweigend aufhebt.
+- Weder die beiden Konfigurationsdateien noch `bot/logs/` sind über HTTP abrufbar.
+  Zugangsdaten und die in den Logs enthaltenen Abonnenten-Adressen sind **nicht**
+  exponiert. Das Ausrollskript prüft das nach jedem Lauf ausdrücklich nach.
 - **Der Log-Betrachter ist die einzige über HTTP erreichbare Komponente** und damit die
   gesamte Angriffsfläche des Projekts. Er gibt Logs aus, die E-Mail-Adressen von
-  Abonnenten enthalten; sein Kennwortschutz ist die einzige Schranke davor. Das gewichtet
-  die Befunde S2, S4 und S5 entsprechend hoch.
+  Abonnenten enthalten; sein Kennwortschutz ist die einzige Schranke davor.
+- Zeigte der Dokumentenstamm versehentlich auf `logviewer/` statt auf
+  `logviewer/public/`, wäre der Kennwort-Hash öffentlich abrufbar, **ohne dass etwas
+  kaputt aussähe**. Genau darauf zielt die Prüfung im Ausrollskript.
 
 ---
 
@@ -592,6 +608,7 @@ Je ein Commit pro Schritt, jeweils testbegleitet:
 | O8 | Fehlt der dritten Messstelle tatsächlich die Ganglinien-Vorlage, oder wurde sie nachträglich gesetzt? (betrifft B11 — bitte `SELECT messstellen_id, trend_template IS NULL FROM messstelllen_abo_zuordnung` prüfen) |
 | O9 | Wird `messstellen`.`nummer` noch für etwas benötigt, oder kann die Spalte entfallen? (betrifft D9) |
 | ~~O10~~ | **entschieden** 13.08.2026 — beide Dateien entfernt. Die Logrotation übernimmt Monolog, `mailtest.php` prüfte nicht den Mailversand. |
+| O12 | Die abgelösten Verzeichnisse `…/pegel2/` und `…/pegel_log/` liegen noch auf dem Server, samt der alten `config.php` und einer `index.php.backup`. Können sie entfernt werden? |
 | O11 | `bot/.htaccess` liegt in einem Verzeichnis, das von keinem Webserver ausgeliefert wird, und ist damit wirkungslos. Kann die Datei entfallen? |
 | O2 | Soll der Log-Viewer ein eigenes Repository werden oder als Unterverzeichnis mitlaufen? |
 | ~~O3~~ | **beantwortet** 13.08.2026 — Gleitkommazahlen, durchweg ohne Nachkommaanteil. Siehe B9. |
