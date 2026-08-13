@@ -53,25 +53,33 @@ Eine ausführliche fachliche Beschreibung steht in [SPEC.md](SPEC.md).
 
 ```bash
 git clone <repository-url> pegelbot
-cd pegelbot/bot
-composer install
+cd pegelbot
+composer install --no-dev     # ohne --no-dev, wenn Tests laufen sollen
 ```
+
+Das Projekt hat **eine** `composer.json` im Wurzelverzeichnis und ein gemeinsames
+`vendor/`. Beide Komponenten laden denselben Autoloader. Getrennte Abhängigkeiten je
+Komponente waren binnen kurzem auseinandergelaufen, sodass die Tests gegen andere
+Fassungen liefen als der Produktivbetrieb.
+
+Die Auflösung ist über `config.platform.php` auf die PHP-Version des Produktivsystems
+festgelegt. Damit installiert auch eine neuere lokale PHP-Version keine Pakete, die
+auf dem Server nicht laufen.
 
 Konfiguration anlegen:
 
 ```bash
-cp config/pegelbot-config.sample.php config/pegelbot-config.php
+cp bot/config/pegelbot-config.sample.php bot/config/pegelbot-config.php
 ```
 
-Anschließend in `config/pegelbot-config.php` die Zugangsdaten der Datenbank sowie den
-gewünschten Loglevel eintragen.
+Anschließend die Zugangsdaten der Datenbank sowie den gewünschten Loglevel eintragen.
 
 > Die Datei enthält Geheimnisse und wird **nicht** versioniert.
 
 Datenbankschema einspielen:
 
 ```bash
-mysql -u <benutzer> -p <datenbank> < ../migrations/000_baseline_schema.sql
+mysql -u <benutzer> -p <datenbank> < migrations/000_baseline_schema.sql
 ```
 
 ---
@@ -171,32 +179,29 @@ composer install
 composer test
 ```
 
-Die Testsuite liegt in `tests/`, das Testgerüst ist PHPUnit. Die Entwicklungswerkzeuge
-stehen in der `composer.json` im Projektwurzelverzeichnis; die Laufzeit-Abhängigkeiten
-des Bots bleiben davon getrennt in `bot/composer.json`, weil beide Komponenten
-unabhängig voneinander ausgerollt werden.
+Die Testsuite liegt in `tests/` und spiegelt die Struktur der Komponenten. Weil alle
+Abhängigkeiten aus einem gemeinsamen `vendor/` kommen, laufen die Tests gegen genau
+die Bibliotheksfassungen, die auch produktiv arbeiten.
 
 ---
 
-## Mitwirken
+## Ausrollen
 
-Die verbindlichen Entwicklungskonventionen stehen in [CLAUDE.md](CLAUDE.md). Kurzfassung:
+Ein Klon des Repositorys, zwei Ziele darin:
 
-- Bezeichner in **Englisch**, Kommentare in **Deutsch**
-- `declare(strict_types=1);` in jeder Datei
-- Zu jeder Änderung gehören **Unit-Tests**
-- Jede Änderung wird zusätzlich per **Smoke-Test** bestätigt
-- Ein Commit, ein Anliegen — Commit-Nachrichten auf Deutsch
+| Ziel | Zeigt auf |
+| ---- | --------- |
+| Cron-Eintrag | `<klon>/bot/main.php` |
+| Dokumentenstamm der Log-Subdomain | `<klon>/logviewer/public/` |
 
----
+```bash
+cd <klon>
+git pull
+composer install --no-dev
+```
 
-## Datenquelle
-
-Die Messwerte stammen von [PEGELONLINE](https://www.pegelonline.wsv.de/) der
-Wasserstraßen- und Schifffahrtsverwaltung des Bundes. Die Daten werden unentgeltlich
-bereitgestellt; die Nutzungsbedingungen der WSV sind zu beachten. Es besteht kein
-Anspruch auf Richtigkeit oder Verfügbarkeit — die Werte sind für amtliche oder
-sicherheitsrelevante Zwecke nicht geeignet.
+Die beiden Konfigurationsdateien und `logviewer/var/` bleiben davon unberührt, weil
+sie nicht versioniert sind.
 
 ---
 

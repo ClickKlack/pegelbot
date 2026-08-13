@@ -13,7 +13,6 @@
 
 # --- Composer-Artefakte -----------------------------------------------------
 /vendor/
-/bot/vendor/
 
 # --- Laufzeitdaten ----------------------------------------------------------
 # Die Verzeichnisse selbst bleiben erhalten, damit sie beim Ausrollen

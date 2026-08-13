@@ -2,10 +2,15 @@
 // bootstrap.php
 declare(strict_types=1);
 
-// Composer-Autoload
+// Composer-Autoload aus dem Projektwurzelverzeichnis.
+//
+// Das Projekt hat bewusst nur eine composer.json: Getrennte Abhaengigkeiten je
+// Komponente waren binnen kurzem auseinandergelaufen, sodass die Tests gegen
+// andere Fassungen liefen als der Produktivbetrieb.
+//
 // Pfade bewusst ueber __DIR__ aufloesen, damit der Bot unabhaengig vom
-// Arbeitsverzeichnis startet und der Cron-Eintrag kein "cd" mehr benoetigt.
-require_once __DIR__ . "/vendor/autoload.php";
+// Arbeitsverzeichnis startet und der Cron-Eintrag kein "cd" benoetigt.
+require_once __DIR__ . "/../vendor/autoload.php";
 
 use Doctrine\DBAL\DriverManager;
 use Monolog\Level;

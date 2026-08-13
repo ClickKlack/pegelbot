@@ -421,16 +421,36 @@ zusätzlich die Verzeichnisauflistung ab und lässt außer `index.php` nichts au
 
 ## 8. Abhängigkeiten
 
+Das Projekt hat **eine** `composer.json` im Wurzelverzeichnis und ein gemeinsames
+`vendor/`. Beide Komponenten laden denselben Autoloader.
+
 | Paket                     | Version | Zweck                         |
 | ------------------------- | ------- | ----------------------------- |
-| `doctrine/dbal`           | 3.7.2   | Datenbankzugriff              |
-| `monolog/monolog`         | 3.5.0   | Logging                       |
-| `guzzlehttp/guzzle`       | 7.8.1   | HTTP-Client für PEGELONLINE   |
-| `phpmailer/phpmailer`     | 6.9.1   | E-Mail-Versand                |
+| `doctrine/dbal`           | 3.10.6  | Datenbankzugriff              |
+| `monolog/monolog`         | 3.10.0  | Logging                       |
+| `guzzlehttp/guzzle`       | 7.15.3  | HTTP-Client für PEGELONLINE   |
+| `phpmailer/phpmailer`     | 6.12.0  | E-Mail-Versand                |
 | `cjrasmussen/bluesky-api` | 1.1.2   | Bluesky                       |
 | `abraham/twitteroauth`    | 6.2.0   | Twitter/X                     |
+| `psr/log`                 | 3.0.2   | Protokoll-Schnittstelle       |
 
-Entwicklungsabhängigkeiten existieren bislang nicht.
+Entwicklung: `phpunit/phpunit` 11.5.
+
+`logviewer/` kommt ohne Abhängigkeiten aus und lädt seine beiden Klassen unmittelbar,
+damit es auch ohne Autoloader lauffähig bleibt.
+
+Die Auflösung ist über `config.platform.php` auf **8.4.24** festgelegt, die
+PHP-Version des Produktivsystems. Andernfalls löst Composer gegen die örtlich
+vorhandene Fassung auf und kann Pakete einspielen, die auf dem Server nicht laufen.
+
+### 8.1 Warum nur eine Abhängigkeitsdatei
+
+Zwischenzeitlich existierten zwei: eine im Wurzelverzeichnis für die Werkzeuge, eine
+in `bot/` für die Laufzeit. Binnen weniger Stunden liefen **sechs von zehn**
+gemeinsamen Paketen auseinander — Guzzle stand bei 7.15.3 gegenüber 7.8.1. Die Tests
+prüften damit anderes Verhalten als das produktiv wirksame, was den Zweck der
+Testabdeckung untergräbt. Getrennte Abhängigkeiten kommen für dieses Projekt daher
+nicht mehr in Frage.
 
 ---
 
@@ -466,7 +486,7 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
 | S7 | niedrig | Tabellen- und Klassennamen werden aus Datenbankinhalten zusammengesetzt. Der Inhalt ist zwar selbst verwaltet, das Muster bleibt aber angreifbar. |
 | ~~S9~~ | **entschärft** 13.08.2026 | Das Dokument beschrieb ungeschlossene Schwachstellen eines laufenden Systems und war damit vor einer Veröffentlichung selbst ein Risiko. Mit der Behebung von S2, S4 und S5 beschreibt es an dieser Stelle nur noch geschlossene Befunde. Vor der Übertragung ist zu prüfen, ob neu hinzugekommene offene Befunde denselben Vorbehalt auslösen. |
-| S10 | mittel | **13 bekannte Schwachstellen in den Laufzeit-Abhängigkeiten des Bots**, festgestellt am 13.08.2026 über `composer audit`: neun in `guzzlehttp/guzzle` 7.8.1, vier in `guzzlehttp/psr7` 2.6.2. Betroffen sind Cookie-Bereiche, Weiterleitungen, Proxy-Kopfzeilen und Host-Verwechslung. **Die tatsächliche Aussetzung ist gering**: Der Bot spricht ausschließlich eine fest verdrahtete HTTPS-Adresse an, verwendet keine Cookies, keinen Proxy und verarbeitet keine Adressen aus fremder Quelle. Zu aktualisieren, aber nicht tagesdringlich. |
+| ~~S10~~ | **behoben** 13.08.2026 | 13 bekannte Schwachstellen in `guzzlehttp/guzzle` 7.8.1 und `guzzlehttp/psr7` 2.6.2. Mit der Zusammenführung der Abhängigkeiten aktualisiert; `composer audit` meldet nichts mehr. Nebeneffekt: Unter PHP 8.5 traten Deprecation-Meldungen aus den alten Bibliotheken auf, die damit ebenfalls entfallen. |
 | S8 | **hoch** | Alle Kanal-Zugangsdaten liegen **unverschlüsselt** in der Datenbank: OAuth-Schlüssel und -Geheimnisse (Twitter), Anwendungskennwörter (Bluesky), Zugriffsmarken (Mastodon). Ein Datenbankauszug — etwa der zur Fehlersuche erstellte — gibt damit sämtliche Konten preis. Auszüge dieser Tabellen dürfen niemals versioniert oder weitergegeben werden. |
 
 Positiv anzumerken: Die Pfadprüfung der Viewer-Endpunkte (`basename()` in Kombination mit
