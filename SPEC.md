@@ -375,8 +375,8 @@ Geheimnisse liegt als `pegelbot-config.sample.php` bei.
 ### 7.2 Logging
 
 Monolog-Kanal `pegelbot`, `RotatingFileHandler` mit 14 Tagen Vorhaltezeit, Ziel
-`bot/logs/pegelbot.log`. Zusätzlich existiert ein Shellskript, das Einträge älter als
-einen Monat aus der Logdatei entfernt.
+`bot/logs/pegelbot.log`. Die Vorhaltezeit regelt allein Monolog; ein früher zusätzlich
+vorhandenes Aufräumskript war überflüssig und ist entfallen.
 
 Die Anwendung schreibt **parallel** über den Logger und über `echo` auf die Standardausgabe —
 beide Ausgaben sind inhaltlich weitgehend redundant.
@@ -440,7 +440,7 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 
 | Nr. | Schwere | Fundstelle | Beschreibung |
 | --- | ------- | ---------- | ------------ |
-| B1 | **hoch** | `src/wsa/WSAServices.php:54`, `:104`; `mailtest.php:29` | `catch (ServerException $e)` ohne passenden `use`-Import. Der Name löst im Namensraum `WSA` bzw. global auf und trifft nie zu. **Jede 5xx-Antwort der PEGELONLINE-API beendet den kompletten Lauf mit einem nicht gefangenen Fehler.** |
+| ~~B1~~ | **behoben** 13.08.2026 | `src/wsa/PegelOnlineApi.php` | `catch (ServerException $e)` ohne passenden `use`-Import: Der Name löste im Namensraum `WSA` auf und traf nie zu, jede 5xx-Antwort beendete den kompletten Lauf. Beide Methoden fangen die Ausnahme jetzt, protokollieren sie und liefern ein leeres Ergebnis; der Lauf verarbeitet die übrigen Messstellen weiter. Beim nächsten Lauf wird ab dem zuletzt gespeicherten Zeitpunkt nachgeholt. Durch fünf Tests abgedeckt. |
 | B2 | **hoch** | `src/MessstellenController.php:228` | Der Zeitpunkt der letzten Benachrichtigung wird auch dann fortgeschrieben, wenn **alle** Versandversuche fehlgeschlagen sind. Eine an einem Kanalausfall gescheiterte Benachrichtigung ist dauerhaft verloren. |
 | B3 | mittel | `src/MessstellenController.php:255` | Die Nachtsperre vergleicht die **UTC**-Stunde gegen die als Ortszeit gedachten Grenzen 6 und 22. Effektiv sperrt sie in der Sommerzeit von 00 bis 08 Uhr Ortszeit. |
 | B4 | mittel | `src/wsa/WSAServices.php:59` | Das Ergebnis von `json_decode()` wird nicht geprüft. Bei ungültigem JSON iteriert die Schleife über `null`. |
@@ -460,7 +460,7 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | --- | ------- | ------------ |
 | S1 | **kritisch** | `bot/config/pegelbot-config.php` enthält echte Datenbank-Zugangsdaten und darf niemals versioniert werden. |
 | ~~S2~~ | **behoben** 13.08.2026 | Das Zugriffskennwort stand im Klartext im Quelltext. Es liegt jetzt als `password_hash()`-Hash in der nicht versionierten `config.php`. Das alte Kennwort gilt als kompromittiert und wird nicht weiterverwendet. |
-| S3 | mittel | Absolute Serverpfade in `logviewer/public/index.php`, `bot/.htaccess` und `bot/deletelog.sh` geben Infrastrukturdetails preis. |
+| ~~S3~~ | **behoben** 13.08.2026 | Absolute Serverpfade sind aus allen versionierten Dateien verschwunden: Der Log-Betrachter liest sie aus der Konfiguration, `deletelog.sh` ist entfallen. Verbleibt nur `bot/.htaccess`, siehe O11. |
 | ~~S4~~ | **behoben** 13.08.2026 | Fehlende Begrenzung der Anmeldeversuche, kein CSRF-Schutz, keine Sitzungserneuerung — alle drei jetzt umgesetzt und getestet, siehe Abschnitt 7.3. |
 | ~~S5~~ | **behoben** 13.08.2026 | Der Vergleich läuft über `password_verify()` und ist damit laufzeitkonstant. |
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
@@ -571,7 +571,7 @@ Je ein Commit pro Schritt, jeweils testbegleitet:
 | O7 | Umstellung von `utf8mb3` auf `utf8mb4` sowie `abonnements_mastodon` von `latin1` — als eigene Migration in Stufe 1? (betrifft D2, D3) |
 | O8 | Fehlt der dritten Messstelle tatsächlich die Ganglinien-Vorlage, oder wurde sie nachträglich gesetzt? (betrifft B11 — bitte `SELECT messstellen_id, trend_template IS NULL FROM messstelllen_abo_zuordnung` prüfen) |
 | O9 | Wird `messstellen`.`nummer` noch für etwas benötigt, oder kann die Spalte entfallen? (betrifft D9) |
-| O10 | `bot/deletelog.sh` und `bot/mailtest.php` sehen nach totem Code aus: Die Logrotation übernimmt bereits Monolog, und `mailtest.php` ruft Google ab, nicht den Mailversand. Können beide entfallen? |
+| ~~O10~~ | **entschieden** 13.08.2026 — beide Dateien entfernt. Die Logrotation übernimmt Monolog, `mailtest.php` prüfte nicht den Mailversand. |
 | O11 | `bot/.htaccess` liegt in einem Verzeichnis, das von keinem Webserver ausgeliefert wird, und ist damit wirkungslos. Kann die Datei entfallen? |
 | O2 | Soll der Log-Viewer ein eigenes Repository werden oder als Unterverzeichnis mitlaufen? |
 | ~~O3~~ | **beantwortet** 13.08.2026 — Gleitkommazahlen, durchweg ohne Nachkommaanteil. Siehe B9. |

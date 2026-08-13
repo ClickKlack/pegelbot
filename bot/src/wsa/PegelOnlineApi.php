@@ -7,6 +7,7 @@ namespace WSA;
 use DateTimeInterface;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ServerException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -44,9 +45,6 @@ final class PegelOnlineApi implements MeasurementApiInterface
             'query' => $query,
         ]);
 
-        // Hinweis: Serverfehler (5xx) werden hier bewusst noch nicht gefangen -
-        // das Verhalten entspricht dem Stand vor der Verlagerung und wird als
-        // Befund B1 gesondert behoben.
         try {
             $response = $this->client->request('GET', $path, [
                 'headers' => ['Accept-Encoding' => 'gzip'],
@@ -67,6 +65,17 @@ final class PegelOnlineApi implements MeasurementApiInterface
             $body = $response->getBody()->getContents();
         } catch (ClientException $e) {
             $this->logger->error('API-Client-Fehler', [
+                'code' => $e->getResponse()->getStatusCode(),
+                'uri'  => (string) $e->getRequest()->getUri(),
+            ]);
+
+            return [];
+        } catch (ServerException $e) {
+            // Eine Stoerung bei PEGELONLINE darf den Lauf nicht beenden: Die
+            // uebrigen Messstellen und die Benachrichtigungen sollen weiterhin
+            // verarbeitet werden. Beim naechsten Lauf wird ohnehin ab dem
+            // zuletzt gespeicherten Zeitpunkt nachgeholt.
+            $this->logger->error('API-Server-Fehler', [
                 'code' => $e->getResponse()->getStatusCode(),
                 'uri'  => (string) $e->getRequest()->getUri(),
             ]);
@@ -114,6 +123,14 @@ final class PegelOnlineApi implements MeasurementApiInterface
             return $response->getBody()->getContents();
         } catch (ClientException $e) {
             $this->logger->error('API-Client-Fehler', [
+                'code' => $e->getResponse()->getStatusCode(),
+                'uri'  => (string) $e->getRequest()->getUri(),
+            ]);
+
+            return '';
+        } catch (ServerException $e) {
+            // Ohne Bild wird kein Verlauf verschickt; der Lauf geht weiter.
+            $this->logger->error('API-Server-Fehler', [
                 'code' => $e->getResponse()->getStatusCode(),
                 'uri'  => (string) $e->getRequest()->getUri(),
             ]);

@@ -7,12 +7,12 @@ namespace Tests\bot\wsa;
 use DateTimeImmutable;
 use DateTimeZone;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ServerException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -154,20 +154,48 @@ final class PegelOnlineApiTest extends TestCase
     }
 
     /**
-     * Haelt den aktuellen Stand fest: Ein Serverfehler bei PEGELONLINE bricht den
-     * Aufruf ab, statt einen leeren Messwertsatz zu liefern. Der komplette Botlauf
-     * endet dadurch vorzeitig.
+     * Befund B1: Eine Stoerung bei PEGELONLINE hat frueher den kompletten Botlauf
+     * beendet, weil der zugehoerige use-Import fehlte und die Ausnahme deshalb
+     * nie gefangen wurde.
      *
-     * Das ist Befund B1. Dieser Test wird mit dessen Behebung umgedreht - er
-     * belegt bis dahin, dass der Fehler wirklich besteht.
+     * @param int $status ein Serverfehler-Code
      */
-    public function testFetchMeasurementsCurrentlyAbortsOnServerError(): void
+    #[DataProvider('serverErrorCodes')]
+    public function testFetchMeasurementsReturnsEmptyArrayOnServerError(int $status): void
     {
-        $api = $this->apiWithResponses([new Response(503, [], 'Wartung')]);
+        $api = $this->apiWithResponses([new Response($status, [], 'Stoerung')]);
 
-        $this->expectException(ServerException::class);
+        self::assertSame([], $api->fetchMeasurements(self::UUID, $this->start()));
+    }
 
-        $api->fetchMeasurements(self::UUID, $this->start());
+    /** @return iterable<string, array{int}> */
+    public static function serverErrorCodes(): iterable
+    {
+        yield 'interner Fehler' => [500];
+        yield 'Wartung'         => [503];
+        yield 'Zeitueberschreitung am Gateway' => [504];
+    }
+
+    /**
+     * Der Lauf muss nach einer Stoerung weitergehen: Faellt eine Messstelle aus,
+     * duerfen die folgenden trotzdem abgerufen werden.
+     */
+    public function testServerErrorDoesNotAffectSubsequentCalls(): void
+    {
+        $api = $this->apiWithResponses([
+            new Response(503, [], 'Stoerung'),
+            $this->jsonResponse('[{"timestamp":"2026-08-13T06:00:00+02:00","value":214.0}]'),
+        ]);
+
+        self::assertSame([], $api->fetchMeasurements(self::UUID, $this->start()));
+        self::assertCount(1, $api->fetchMeasurements(self::UUID, $this->start()));
+    }
+
+    public function testFetchTrendImageReturnsEmptyStringOnServerError(): void
+    {
+        $api = $this->apiWithResponses([new Response(503, [], 'Stoerung')]);
+
+        self::assertSame('', $api->fetchTrendImage(self::UUID));
     }
 
     // ------------------------------------------------------------------
