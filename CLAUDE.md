@@ -117,10 +117,16 @@ Ablauf:
 2. Dem Benutzer eine **konkrete Anleitung** geben: was auszuführen ist und welches
    Ergebnis erwartet wird.
 3. Die Rückmeldung abwarten.
-4. Erst danach gilt die Aufgabe als erledigt.
+4. Erst nach bestandenem Smoke-Test wird committet.
 
-Eine Änderung darf **nicht** als fertig gemeldet werden, solange der Smoke-Test aussteht.
-Fällt er negativ aus, wird nachgebessert und erneut vorgelegt.
+**Kein Commit vor dem bestandenen Smoke-Test.** Die Arbeit bleibt so lange im
+Arbeitsverzeichnis liegen. Das ist bewusst so: Ein Commit ist die Aussage „das
+funktioniert", und diese Aussage steht dem Benutzer zu, nicht dem Werkzeug. Fällt
+der Smoke-Test negativ aus, wird nachgebessert und erneut vorgelegt — ohne dass ein
+Commit korrigiert oder zurückgenommen werden muss.
+
+Eine Änderung darf ebenso wenig als fertig gemeldet werden, solange der Smoke-Test
+aussteht.
 
 ---
 
