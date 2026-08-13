@@ -1,0 +1,15 @@
+# ============================================================================
+#  Absicherung des Dokumentenstamms des Log-Betrachters.
+#
+#  Die Anmeldung selbst laeuft ueber das Formular in index.php, nicht ueber den
+#  Webserver. Diese Datei enthaelt deshalb keine serverspezifischen Pfade und
+#  kann versioniert werden.
+# ============================================================================
+
+# Keine Verzeichnisauflistung
+Options -Indexes
+
+# Nur index.php ausliefern; hier liegt sonst nichts, was oeffentlich gehoert
+<FilesMatch "^(?!index\.php$).*$">
+    Require all denied
+</FilesMatch>

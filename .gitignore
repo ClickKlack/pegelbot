@@ -7,11 +7,9 @@
 /bot/config/pegelbot-config.php
 /logviewer/config.php
 
-# --- Zugriffsschutz des Log-Betrachters -------------------------------------
-# AuthUserFile verlangt einen absoluten Pfad, deshalb ist die fertige .htaccess
-# serverspezifisch. Vorlage: logviewer/public/.htaccess.sample
-/logviewer/public/.htaccess
-/logviewer/.htpasswd
+# --- Laufzeitdaten des Log-Betrachters --------------------------------------
+# Zaehler der Anmelde-Fehlversuche
+/logviewer/var/
 
 # --- Composer-Artefakte -----------------------------------------------------
 /vendor/

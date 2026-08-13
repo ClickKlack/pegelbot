@@ -394,16 +394,28 @@ statt mit einem Fehler des PHP-Interpreters.
 Der Viewer bietet drei JSON-Endpunkte (`list`, `file`, `combined`) und eine Oberfläche
 mit Hell-/Dunkelmodus, Loglevel-Filter, Volltextsuche und automatischer Aktualisierung.
 
-**Zugriffsschutz:** HTTP-Basic-Auth durch den Webserver, konfiguriert über
-`logviewer/public/.htaccess` (Vorlage `.htaccess.sample`). Die Kennwortdatei liegt als
-`logviewer/.htpasswd` oberhalb des Dokumentenstamms. Beide Dateien sind
-serverspezifisch und werden nicht versioniert.
+**Zugriffsschutz:** Anmeldeformular mit Sitzung. Die sicherheitsrelevante Logik liegt
+in `LogViewer\Authenticator` und ist durch Unit-Tests abgedeckt; `index.php` enthält
+nur Sitzung, Formular und CSRF-Prüfung.
 
-Solange `requireAuth` gesetzt ist, bricht `index.php` mit HTTP 500 ab, wenn der
-Webserver keinen angemeldeten Benutzer durchreicht. Damit wird eine beim Ausrollen
-vergessene `.htaccess` zu einem sichtbaren Fehler statt zu einem unbemerkt offenen
-Zugang. Geprüft werden `PHP_AUTH_USER`, `REMOTE_USER` und `REDIRECT_REMOTE_USER`, weil
-die Variable je nach PHP-Anbindung abweicht.
+| Eigenschaft | Umsetzung |
+| ----------- | --------- |
+| Kennwortablage | `password_hash()`-Hash in `config.php`, erzeugt über `bin/hash-password.php`. Kein Klartext. |
+| Vergleich | `password_verify()`, laufzeitkonstant |
+| Versuchsbegrenzung | 5 Fehlversuche, danach 15 Minuten Sperre. Zähler **auf der Platte** je Aufrufer, nicht in der Sitzung — sonst genügte das Verwerfen des Sitzungsplätzchens zur Umgehung. |
+| Aufrufer-Kennung | SHA-256 über IP-Adresse und Browserkennung; im Zustandsverzeichnis stehen keine IP-Adressen im Klartext |
+| Sitzungsübernahme | `session_regenerate_id(true)` nach erfolgreicher Anmeldung |
+| CSRF | Zufallstoken in der Sitzung, Abgleich mit `hash_equals()` bei Anmeldung **und** Abmeldung |
+| Sitzungsplätzchen | `httponly`, `samesite=Strict`, `secure` bei HTTPS |
+| Ablauf | Anmeldung per POST, danach Umleitung (POST-Redirect-GET) |
+
+Ohne gültigen Hash in `config.php` bricht der Betrachter mit HTTP 500 ab, statt
+Logdateien ungeschützt auszuliefern. Der Fall „unfertig eingerichtet" ist damit
+sichtbar kaputt statt unbemerkt offen.
+
+Die Fehlversuchszähler liegen in `logviewer/var/auth/`, oberhalb des
+Dokumentenstamms und nicht versioniert. `logviewer/public/.htaccess` schaltet
+zusätzlich die Verzeichnisauflistung ab und lässt außer `index.php` nichts ausliefern.
 
 ---
 
@@ -446,10 +458,10 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | Nr. | Schwere | Beschreibung |
 | --- | ------- | ------------ |
 | S1 | **kritisch** | `bot/config/pegelbot-config.php` enthält echte Datenbank-Zugangsdaten und darf niemals versioniert werden. |
-| ~~S2~~ | **behoben** 13.08.2026 | Das Zugriffskennwort stand im Klartext im Quelltext. Die Anmeldung liegt jetzt beim Webserver (HTTP-Basic-Auth), der Quelltext enthält keine Kennwortlogik mehr. Das alte Kennwort gilt als kompromittiert und wird nicht weiterverwendet. |
+| ~~S2~~ | **behoben** 13.08.2026 | Das Zugriffskennwort stand im Klartext im Quelltext. Es liegt jetzt als `password_hash()`-Hash in der nicht versionierten `config.php`. Das alte Kennwort gilt als kompromittiert und wird nicht weiterverwendet. |
 | S3 | mittel | Absolute Serverpfade in `logviewer/public/index.php`, `bot/.htaccess` und `bot/deletelog.sh` geben Infrastrukturdetails preis. |
-| ~~S4~~ | **behoben** 13.08.2026 | Fehlende Begrenzung der Anmeldeversuche, kein CSRF-Schutz, keine Sitzungserneuerung. Mit dem Wegfall der eigenen Sitzungslogik entfallen alle drei Punkte; die Absicherung obliegt dem Webserver. |
-| ~~S5~~ | **behoben** 13.08.2026 | Der nicht laufzeitkonstante Kennwortvergleich existiert nicht mehr. |
+| ~~S4~~ | **behoben** 13.08.2026 | Fehlende Begrenzung der Anmeldeversuche, kein CSRF-Schutz, keine Sitzungserneuerung — alle drei jetzt umgesetzt und getestet, siehe Abschnitt 7.3. |
+| ~~S5~~ | **behoben** 13.08.2026 | Der Vergleich läuft über `password_verify()` und ist damit laufzeitkonstant. |
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
 | S7 | niedrig | Tabellen- und Klassennamen werden aus Datenbankinhalten zusammengesetzt. Der Inhalt ist zwar selbst verwaltet, das Muster bleibt aber angreifbar. |
 | ~~S9~~ | **entschärft** 13.08.2026 | Das Dokument beschrieb ungeschlossene Schwachstellen eines laufenden Systems und war damit vor einer Veröffentlichung selbst ein Risiko. Mit der Behebung von S2, S4 und S5 beschreibt es an dieser Stelle nur noch geschlossene Befunde. Vor der Übertragung ist zu prüfen, ob neu hinzugekommene offene Befunde denselben Vorbehalt auslösen. |

@@ -5,15 +5,19 @@ declare(strict_types=1);
 // ============================================================================
 //  Log-Betrachter
 //
-//  Die Anmeldung uebernimmt der Webserver per HTTP-Basic-Auth, siehe .htaccess.
-//  Diese Datei enthaelt deshalb keinerlei Kennwortlogik mehr.
+//  Die Anmeldung laeuft ueber ein eigenes Formular. Die sicherheitsrelevante
+//  Logik - Kennwortpruefung und Versuchsbegrenzung - steckt im Authenticator
+//  und ist dort durch Unit-Tests abgedeckt. Hier liegen nur Sitzung, Formular
+//  und der CSRF-Schutz.
 // ============================================================================
 
+use LogViewer\Authenticator;
 use LogViewer\LogReader;
 
-// LogReader hat keine externen Abhaengigkeiten und wird bewusst direkt geladen,
-// damit logviewer/ auch ohne Composer-Autoload ausgerollt werden kann.
+// Beide Klassen haben keine externen Abhaengigkeiten und werden bewusst direkt
+// geladen, damit logviewer/ auch ohne Composer-Autoload ausgerollt werden kann.
 require_once __DIR__ . '/../src/LogReader.php';
+require_once __DIR__ . '/../src/Authenticator.php';
 
 // ---------- Konfiguration ----------
 // Liegt oberhalb des Dokumentenstamms und ist damit nicht ueber HTTP erreichbar.
@@ -31,29 +35,99 @@ $tailLines = (int) $config['tailLines'];      // Maximale Zeilen pro Datei
 $interval  = (int) $config['interval'];       // Auto-Refresh in ms, mindestens 500
 $timezone  = (string) $config['timezone'];
 
-// ---------- Sicherung der Anmeldung ----------
-// Die Anmeldung erledigt der Webserver. Faellt die .htaccess beim Ausrollen unter
-// den Tisch, waere der Betrachter ohne diese Pruefung still und leise offen - und
-// er liefert Logs aus, die E-Mail-Adressen von Abonnenten enthalten. Lieber
-// sichtbar kaputt als unbemerkt offen.
-if (($config['requireAuth'] ?? true) === true) {
-    // Je nach PHP-Anbindung (Modul, CGI, FastCGI) steht der angemeldete Benutzer
-    // in einer anderen Variablen.
-    $authUser = $_SERVER['PHP_AUTH_USER']
-        ?? $_SERVER['REMOTE_USER']
-        ?? $_SERVER['REDIRECT_REMOTE_USER']
-        ?? '';
+date_default_timezone_set($timezone);
 
-    if ($authUser === '') {
-        http_response_code(500);
-        exit(
-            'Zugriffsschutz nicht aktiv. Bitte .htaccess einrichten '
-            . '(Vorlage: .htaccess.sample) oder requireAuth in config.php abschalten.'
-        );
+// ---------- Anmeldung ----------
+
+$auth = new Authenticator(
+    (string) ($config['passwordHash'] ?? ''),
+    (string) ($config['stateFolder'] ?? __DIR__ . '/../var/auth'),
+    (int) ($config['maxLoginAttempts'] ?? 5),
+    (int) ($config['lockoutSeconds'] ?? 900),
+);
+
+// Ohne hinterlegtes Kennwort verweigert der Betrachter den Dienst, statt Logs
+// mit Abonnenten-Adressen ungeschuetzt auszuliefern. Lieber sichtbar kaputt
+// als unbemerkt offen.
+if (!$auth->isConfigured()) {
+    http_response_code(500);
+    exit(
+        'Zugriffsschutz nicht eingerichtet. Bitte passwordHash in config.php setzen '
+        . '(erzeugen mit: php bin/hash-password.php).'
+    );
+}
+
+session_set_cookie_params([
+    'path'     => '/',
+    'httponly' => true,
+    'samesite' => 'Strict',
+    'secure'   => ($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? '') !== 'off',
+]);
+session_name('logviewer');
+session_start();
+
+$now       = time();
+$clientKey = $auth->clientKey(
+    (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+    (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+);
+
+// Ein gueltiges Token liegt jeder Anmelde- und Abmeldeaktion zugrunde
+if (!isset($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
+}
+
+/** Prueft das mitgesendete CSRF-Token. */
+$csrfIsValid = static fn (): bool => hash_equals(
+    (string) ($_SESSION['csrf'] ?? ''),
+    (string) ($_POST['csrf'] ?? ''),
+);
+
+if (isset($_POST['logout']) && $csrfIsValid()) {
+    $_SESSION = [];
+    session_destroy();
+    header('Location: ./');
+    exit;
+}
+
+$loginError = null;
+
+if (isset($_POST['password'])) {
+    $remaining = $auth->remainingLockout($clientKey, $now);
+
+    if (!$csrfIsValid()) {
+        // Tritt im Normalfall nur auf, wenn das Formular zu lange offen lag
+        $loginError = 'Das Formular ist abgelaufen. Bitte erneut versuchen.';
+    } elseif ($remaining > 0) {
+        $loginError = 'Zu viele Fehlversuche. Erneut möglich in '
+            . (int) ceil($remaining / 60) . ' Minuten.';
+    } elseif ($auth->verify((string) $_POST['password'])) {
+        $auth->clearFailures($clientKey);
+        $auth->purgeExpired($now);
+
+        // Gegen Sitzungsuebernahme: nach der Anmeldung eine neue Kennung
+        session_regenerate_id(true);
+        $_SESSION['authenticated'] = true;
+
+        header('Location: ./');
+        exit;
+    } else {
+        $auth->registerFailure($clientKey, $now);
+        $loginError = 'Falsches Kennwort.';
+
+        if ($auth->isLockedOut($clientKey, $now)) {
+            $loginError = 'Falsches Kennwort. Zugang jetzt vorübergehend gesperrt.';
+        }
     }
 }
 
-date_default_timezone_set($timezone);
+if (empty($_SESSION['authenticated'])) {
+    // Nicht angemeldet: Anmeldeseite ausgeben und abbrechen. Die JSON-Endpunkte
+    // weiter unten werden dadurch gar nicht erst erreicht.
+    http_response_code($loginError === null ? 200 : 401);
+    require __DIR__ . '/../src/login-page.php';
+    exit;
+}
 
 if ($interval < 500) {
     $interval = 500;
@@ -513,8 +587,10 @@ body, .sidebar, .topbar, .search-bar, .sidebar-header,
     </div>
 
     <div class="sidebar-footer">
-      <!-- Kein Abmelde-Knopf: Die Anmeldung liegt beim Webserver (HTTP-Basic-Auth).
-           Zum Abmelden das Browserfenster schliessen. -->
+      <form method="post" style="flex:1">
+        <input type="hidden" name="csrf" value="<?php echo htmlspecialchars((string) ($_SESSION['csrf'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>">
+        <button type="submit" name="logout" value="1" class="logout-btn">Abmelden</button>
+      </form>
       <div class="refresh-indicator" id="refresh-dot" title="Auto-Refresh"></div>
     </div>
   </aside>

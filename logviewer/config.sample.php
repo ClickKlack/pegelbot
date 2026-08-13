@@ -10,8 +10,9 @@ declare(strict_types=1);
 //
 //      cp config.sample.php config.php
 //
-//  Die Anmeldung selbst erledigt der Webserver per HTTP-Basic-Auth, siehe
-//  public/.htaccess.sample. Hier steht kein Kennwort mehr.
+//  Das Kennwort steht hier nur als Hash. Erzeugen mit:
+//
+//      php bin/hash-password.php
 // ============================================================================
 
 return [
@@ -21,11 +22,18 @@ return [
     // Dateinamenpraefix; erwartet wird das Muster praefix-YYYY-MM-DD.log
     'logPrefix' => 'pegelbot',
 
-    // Bricht ab, wenn der Webserver keinen angemeldeten Benutzer durchreicht.
-    // Nur abschalten, wenn der Zugriff anderweitig eingeschraenkt ist, etwa
-    // ueber eine IP-Freigabe. Ohne Schutz waeren die Logdateien samt der darin
-    // enthaltenen E-Mail-Adressen oeffentlich abrufbar.
-    'requireAuth' => true,
+    // Kennwort-Hash aus password_hash(). Ohne gueltigen Hash verweigert der
+    // Betrachter den Dienst - die Logdateien enthalten E-Mail-Adressen von
+    // Abonnenten und duerfen nicht ungeschuetzt ausgeliefert werden.
+    'passwordHash' => '',
+
+    // Fehlversuche bis zur Sperre und Dauer der Sperre in Sekunden
+    'maxLoginAttempts' => 5,
+    'lockoutSeconds'   => 900,
+
+    // Ablage der Fehlversuchszaehler. Muss ausserhalb des Dokumentenstamms
+    // liegen und fuer den Webserver beschreibbar sein.
+    'stateFolder' => __DIR__ . '/var/auth',
 
     // Maximale Anzahl Zeilen, die je Datei ausgeliefert wird
     'tailLines' => 1000,

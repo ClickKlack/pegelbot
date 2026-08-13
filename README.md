@@ -107,20 +107,23 @@ Hell-/Dunkelmodus. Der Zugriff ist durch ein Kennwort geschützt.
 ```bash
 cd logviewer
 cp config.sample.php config.php
-cp public/.htaccess.sample public/.htaccess
-htpasswd -c .htpasswd <benutzername>
+php bin/hash-password.php
 ```
 
-In `config.php` das Logverzeichnis des Bots eintragen, in `public/.htaccess` den
-absoluten Pfad zur `.htpasswd`. Beide Dateien liegen **oberhalb** von `public/`
-beziehungsweise sind serverspezifisch und werden nicht versioniert.
+Das Skript fragt das Kennwort ab und gibt den Hash aus. Diesen zusammen mit dem
+Logverzeichnis des Bots in `config.php` eintragen. Die Datei liegt **oberhalb** von
+`public/`, ist damit über HTTP nicht erreichbar und wird nicht versioniert.
 
-Die Anmeldung übernimmt der Webserver per HTTP-Basic-Auth. Reicht er keinen
-angemeldeten Benutzer durch, bricht der Betrachter mit HTTP 500 ab, statt die Logs
-ungeschützt auszuliefern.
+Der Zugriff ist durch ein Anmeldeformular geschützt: Kennwort nur als Hash, Sperre
+nach fünf Fehlversuchen, CSRF-Schutz, neue Sitzungskennung nach der Anmeldung. Fehlt
+ein gültiger Hash, bricht der Betrachter mit HTTP 500 ab, statt die Logs ungeschützt
+auszuliefern.
+
+Das Verzeichnis `logviewer/var/auth/` muss für den Webserver beschreibbar sein — dort
+liegen die Fehlversuchszähler.
 
 > Der Dokumentenstamm der Subdomain muss auf `logviewer/public/` zeigen — nicht auf
-> `logviewer/`. Andernfalls wären `config.php` und `.htpasswd` abrufbar.
+> `logviewer/`. Andernfalls wären `config.php` und die Zähler abrufbar.
 
 ---
 
