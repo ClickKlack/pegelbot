@@ -9,7 +9,15 @@
 # Keine Verzeichnisauflistung
 Options -Indexes
 
-# Nur index.php ausliefern; hier liegt sonst nichts, was oeffentlich gehoert
-<FilesMatch "^(?!index\.php$).*$">
+DirectoryIndex index.php
+
+# Punktdateien sperren.
+#
+# ACHTUNG: Das Muster darf nicht auf die leere Zeichenkette passen. Eine
+# fruehere Fassung sperrte mit "^(?!index\.php$).*$" alles ausser index.php -
+# das traf auch die Anfrage auf das Verzeichnis selbst, bei der der Dateiname
+# leer ist. Apache verweigerte dadurch mit 403, bevor DirectoryIndex ueberhaupt
+# zu index.php aufloesen konnte.
+<FilesMatch "^\.">
     Require all denied
 </FilesMatch>
