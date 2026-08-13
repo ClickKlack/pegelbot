@@ -1,0 +1,36 @@
+# ============================================================================
+#  Pegelbot - nicht zu versionierende Dateien
+# ============================================================================
+
+# --- Konfiguration mit Zugangsdaten -----------------------------------------
+# Zu jeder dieser Dateien gehoert eine versionierte Vorlage *.sample.php
+/bot/config/pegelbot-config.php
+/logviewer/config.php
+
+# --- Composer-Artefakte -----------------------------------------------------
+/bot/vendor/
+
+# --- Laufzeitdaten ----------------------------------------------------------
+# Die Verzeichnisse selbst bleiben erhalten, damit sie beim Ausrollen
+# vorhanden sind - der Bot legt sie nicht selbst an.
+/bot/logs/*
+!/bot/logs/.gitkeep
+/bot/tmp/*
+!/bot/tmp/.gitkeep
+
+# --- Datenbankauszuege ------------------------------------------------------
+# Auszuege der Abonnement-Tabellen enthalten Zugangsdaten im Klartext
+# und duerfen das Projekt nicht verlassen. Siehe SPEC.md, Befund S8.
+/dumps/
+*.dump.sql
+*.sql.gz
+
+# --- Betriebssystem und Editoren --------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Testwerkzeuge ----------------------------------------------------------
+/.phpunit.result.cache
+/coverage/
