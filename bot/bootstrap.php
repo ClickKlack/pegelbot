@@ -30,6 +30,13 @@ $dbParams = [
 $logger = new Logger('pegelbot');
 $logger->pushHandler(new RotatingFileHandler(__DIR__.'/logs/pegelbot.log', 14, DEBUG_LEVEL));
 
+// Zugriff auf PEGELONLINE; der HTTP-Client wird hier erzeugt und
+// hereingereicht, damit die API-Klasse in Tests ersetzbar bleibt.
+$api = new WSA\PegelOnlineApi(
+    new GuzzleHttp\Client(['base_uri' => WSA\PegelOnlineApi::API_URL]),
+    $logger
+);
+
 // Datenbankverbindung
 $connection = DriverManager::getConnection($dbParams);
 

@@ -17,11 +17,14 @@ class MessstellenController
     private ?\DateTime $letzteMessung = null;
 
   
+    protected \WSA\MeasurementApiInterface $_api;
+
     // Konstruktor mit Eigenschaften der Messstelle
-    public function __construct(\Doctrine\DBAL\Connection &$connection, \Monolog\Logger &$logger, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
-        // DB-Connection und Logger als Referenz übernehmen
+    public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
+        // Objekte werden in PHP ohnehin als Handle uebergeben, deshalb ohne Referenz
         $this->_connection = $connection;
         $this->_logger     = $logger;
+        $this->_api        = $api;
 
         // die eigentlichen Eigenschaften übernehmen
         $this->id = $id;
@@ -84,7 +87,7 @@ class MessstellenController
             'name' => $this->name,
             'last_date' => $this->getTimestampLetzteMessung()->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y H:i:s')
         ]);
-        $this->saveMessungeninDB(\WSA\WSAServices::getMeasurementsByStationUUID($this->_logger, $this->uuid, $this->getTimestampLetzteMessung()->add(new \DateInterval('PT1S'))));
+        $this->saveMessungeninDB($this->_api->fetchMeasurements($this->uuid, $this->getTimestampLetzteMessung()->add(new \DateInterval('PT1S'))));
     }
 
     // prüft, welche Abo-Templates vorhanden sind
@@ -286,7 +289,7 @@ class MessstellenController
         $message_text = $this->GetTrendMessage();
 
         // lädt die Verlaufsgrafik herunter
-        $verlauf_image = \WSA\WSAServices::getMeasurementsTrendByStationUUID($this->uuid);
+        $verlauf_image = $this->_api->fetchTrendImage($this->uuid);
         
         if (is_null($verlauf_image) || strlen($verlauf_image) < 1) {
             // da ist nichts zum verschicken

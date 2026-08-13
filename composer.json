@@ -7,11 +7,15 @@
         "php": ">=8.4"
     },
     "require-dev": {
+        "guzzlehttp/guzzle": "^7.8",
+        "monolog/monolog": "^3.5",
         "phpunit/phpunit": "^11.5"
     },
     "autoload": {
         "psr-4": {
-            "LogViewer\\": "logviewer/src/"
+            "LogViewer\\": "logviewer/src/",
+            "PegelBot\\": "bot/src/",
+            "WSA\\": "bot/src/wsa/"
         }
     },
     "autoload-dev": {

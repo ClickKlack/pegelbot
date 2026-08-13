@@ -13,13 +13,16 @@
          displayDetailsOnTestsThatTriggerErrors="true"
          displayDetailsOnTestsThatTriggerNotices="true">
     <testsuites>
-        <!-- Der Bot bekommt eine eigene Suite, sobald seine Module testbar sind -->
+        <testsuite name="bot">
+            <directory>tests/bot</directory>
+        </testsuite>
         <testsuite name="logviewer">
             <directory>tests/logviewer</directory>
         </testsuite>
     </testsuites>
     <source>
         <include>
+            <directory>bot/src</directory>
             <directory>logviewer/src</directory>
         </include>
     </source>

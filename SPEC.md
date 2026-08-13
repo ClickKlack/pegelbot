@@ -448,8 +448,9 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | B6 | mittel | `src/MessstellenController.php:64` | Einfügen der Messwerte ohne Transaktion. Der Primärschlüssel (`messstellen_id`, `zeitpunkt`) schließt Doppeleinträge zwar aus, wandelt sie aber in eine **Verletzung der Eindeutigkeitsbedingung** um. Diese wird nicht gefangen und beendet den Lauf; die zuvor eingefügten Werte bleiben als Teilzustand zurück. Auslöser: überlappende Läufe oder wiederholte Zeitstempel in einer API-Antwort. |
 | B7 | niedrig | `src/MessstellenController.php:291` | Prüfung auf `null` bei einer Methode mit Rückgabetyp `string` — toter Code. |
 | B8 | niedrig | `src/mastodonController.php:51`, `src/twitterController.php:53` | Beide Kanäle schreiben in dieselbe feste Zwischendatei `tmp/Ganglinie.png`. Bei überlappenden Läufen entsteht ein Wettlauf. |
-| B9 | zu prüfen | `src/wsa/Measurement.php:7` | `int $value` ohne `declare(strict_types=1)`. Die Zielspalte ist `smallint(6)`, das Datenmodell ist also ganzzahlig. Liefert die API einen Dezimalwert, wird er in PHP stillschweigend abgeschnitten. Der API-Vertrag ist zu klären (O3). |
+| ~~B9~~ | **behoben** 13.08.2026 | `src/wsa/Measurement.php` | Bestätigt: PEGELONLINE liefert die Werte **immer** als Gleitkommazahl (`38.0`), in 576 geprüften Werten zweier Messstellen keiner mit Nachkommaanteil. Die früheren Fassungen liefen ohne strikte Typen und wandelten still um. `Measurement` nimmt jetzt `int\|float` entgegen und rundet ausdrücklich, statt abzuschneiden. |
 | B10 | niedrig | `bootstrap.php:36` | Der Verbindungstest `SELECT 1 FROM dual` ist MySQL-spezifisch. |
+| B13 | niedrig | `src/wsa/PegelOnlineApi.php` | Der Abfrageteil wird als fertige Zeichenkette übergeben, der Zeitzonenversatz `+00:00` also unkodiert übertragen. In einem Abfrageteil steht `+` für ein Leerzeichen, korrekt wäre `%2B`. PEGELONLINE akzeptiert es seit jeher; ein Test hält das Verhalten fest. Zu beheben, sobald die Abfrage über ein Feld statt über eine Zeichenkette gebaut wird. |
 | B11 | **hoch** | `src/MessstellenController.php:172` | `trend_template` ist `NULL` erlaubt, `GetTrendMessage()` übergibt den Wert ungeprüft an `str_replace()`. Unter PHP 8.4 ist `null` als Betreff veraltet; die erzeugte Nachricht ist leer. Das ist **kein theoretischer Fall**: Das Migrationsskript setzt die Vorlage nur für die Messstellen 1 und 3 — die dritte Messstelle hat keine. Sie postet Ganglinien ohne Text. |
 | B12 | mittel | `src/MessstellenController.php:344` | Phase 3 ermittelt `zeitpunkt_aktuell` über eine Unterabfrage ohne Verbund auf `messwerte`. Für eine Messstelle **ohne jeden Messwert** ist der Wert `NULL` und wird in die Spalte `letzter_verlaufszeitpunkt` geschrieben, die `NOT NULL` ist — die Anweisung scheitert. Phase 2 ist davon nicht betroffen, weil sie einen inneren Verbund verwendet. Betrifft neu angelegte Messstellen. |
 
@@ -465,6 +466,7 @@ Entwicklungsabhängigkeiten existieren bislang nicht.
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
 | S7 | niedrig | Tabellen- und Klassennamen werden aus Datenbankinhalten zusammengesetzt. Der Inhalt ist zwar selbst verwaltet, das Muster bleibt aber angreifbar. |
 | ~~S9~~ | **entschärft** 13.08.2026 | Das Dokument beschrieb ungeschlossene Schwachstellen eines laufenden Systems und war damit vor einer Veröffentlichung selbst ein Risiko. Mit der Behebung von S2, S4 und S5 beschreibt es an dieser Stelle nur noch geschlossene Befunde. Vor der Übertragung ist zu prüfen, ob neu hinzugekommene offene Befunde denselben Vorbehalt auslösen. |
+| S10 | mittel | **13 bekannte Schwachstellen in den Laufzeit-Abhängigkeiten des Bots**, festgestellt am 13.08.2026 über `composer audit`: neun in `guzzlehttp/guzzle` 7.8.1, vier in `guzzlehttp/psr7` 2.6.2. Betroffen sind Cookie-Bereiche, Weiterleitungen, Proxy-Kopfzeilen und Host-Verwechslung. **Die tatsächliche Aussetzung ist gering**: Der Bot spricht ausschließlich eine fest verdrahtete HTTPS-Adresse an, verwendet keine Cookies, keinen Proxy und verarbeitet keine Adressen aus fremder Quelle. Zu aktualisieren, aber nicht tagesdringlich. |
 | S8 | **hoch** | Alle Kanal-Zugangsdaten liegen **unverschlüsselt** in der Datenbank: OAuth-Schlüssel und -Geheimnisse (Twitter), Anwendungskennwörter (Bluesky), Zugriffsmarken (Mastodon). Ein Datenbankauszug — etwa der zur Fehlersuche erstellte — gibt damit sämtliche Konten preis. Auszüge dieser Tabellen dürfen niemals versioniert oder weitergegeben werden. |
 
 Positiv anzumerken: Die Pfadprüfung der Viewer-Endpunkte (`basename()` in Kombination mit
@@ -490,7 +492,7 @@ Der Code ist im gegenwärtigen Zustand **nicht sinnvoll unit-testbar**. Ursachen
 
 | Nr. | Hindernis | Auswirkung |
 | --- | --------- | ---------- |
-| T1 | Der API-Zugriff ist eine statische Methode, die ihren HTTP-Client selbst erzeugt | Nicht ersetzbar; jeder Test träfe die echte WSV-API |
+| ~~T1~~ | **behoben** 13.08.2026 — `WSA\MeasurementApiInterface` mit der Umsetzung `WSA\PegelOnlineApi`. HTTP-Client und Protokoll werden hereingereicht, die Klasse ist über den Konstruktor einschleusbar. Die statische Klasse `WSAServices` ist entfallen. | — |
 | T2 | Kanal-Controller werden per `new $class(...)` aus einem Datenbankwert erzeugt | Keine Einschleusung von Testdoubles möglich |
 | T3 | `new \DateTime("now")` steht direkt in der Fachlogik | Nachtsperre und alle Zeitschwellen sind nicht deterministisch prüfbar |
 | T4 | `echo` ist mit der Fachlogik vermischt | Ausgabe nicht abtrennbar, Ergebnisse nicht prüfbar |
@@ -572,6 +574,6 @@ Je ein Commit pro Schritt, jeweils testbegleitet:
 | O10 | `bot/deletelog.sh` und `bot/mailtest.php` sehen nach totem Code aus: Die Logrotation übernimmt bereits Monolog, und `mailtest.php` ruft Google ab, nicht den Mailversand. Können beide entfallen? |
 | O11 | `bot/.htaccess` liegt in einem Verzeichnis, das von keinem Webserver ausgeliefert wird, und ist damit wirkungslos. Kann die Datei entfallen? |
 | O2 | Soll der Log-Viewer ein eigenes Repository werden oder als Unterverzeichnis mitlaufen? |
-| O3 | Liefert die PEGELONLINE-API ganzzahlige oder dezimale Messwerte? (betrifft B9) |
+| ~~O3~~ | **beantwortet** 13.08.2026 — Gleitkommazahlen, durchweg ohne Nachkommaanteil. Siehe B9. |
 | O4 | Wird der Twitter/X-Kanal noch produktiv genutzt? |
 | O5 | Sollen deutsche Bezeichner in Datenbankspalten mitmigriert werden, oder bleibt das Schema aus Bestandsgründen deutsch? |

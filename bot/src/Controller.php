@@ -8,13 +8,15 @@ namespace PegelBot;
 class Controller {
     protected \Doctrine\DBAL\Connection $_connection;
     protected \Monolog\Logger $_logger;
+    protected \WSA\MeasurementApiInterface $_api;
 
     /**
      * constructor
      */
-    public function __construct(\Doctrine\DBAL\Connection &$connection, \Monolog\Logger &$logger) {
+    public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api) {
         $this->_connection = $connection;
         $this->_logger     = $logger;
+        $this->_api        = $api;
     }
 
     /**
@@ -48,7 +50,7 @@ class Controller {
         $messtellen = array();
         $sql = "SELECT id, name, nummer, uuid FROM messstellen WHERE update_active = 1";
         foreach ($this->_connection->iterateAssociativeIndexed($sql) as $id => $data) {
-            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $id, $data['name'], $data['nummer'], $data['uuid']);
+            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $id, $data['name'], $data['nummer'], $data['uuid']);
         }
       
         return $messtellen;
@@ -81,7 +83,7 @@ class Controller {
         INNER JOIN messwerte wa ON wa.messstellen_id = m.id AND wa.zeitpunkt = (SELECT max(mwi.zeitpunkt) FROM messwerte mwi WHERE mwi.messstellen_id = m.id)
         AND m.update_active = 1";
         foreach ($this->_connection->iterateAssociativeIndexed($sql) as $id => $data) {
-            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
+            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
         }
       
         return $messtellen;
@@ -109,7 +111,7 @@ class Controller {
         INNER JOIN messstelllen_abo_zuordnung a ON m.id = a.messstellen_id
         AND m.update_active = 1";
         foreach ($this->_connection->iterateAssociativeIndexed($sql) as $id => $data) {
-            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
+            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
         }
       
         return $messtellen;
