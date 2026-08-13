@@ -139,6 +139,31 @@ Kanäle, die keine Bilder verschicken können, überschreiben `supportsTrend()` 
 
 ---
 
+## Lokale Entwicklungsumgebung
+
+Für einen echten Botlauf ohne Zugriff auf die Produktivdatenbank:
+
+```bash
+mariadb -e "CREATE DATABASE pegelbot_local CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci;
+            CREATE USER 'pegelbot_local'@'localhost' IDENTIFIED BY '<kennwort>';
+            GRANT ALL PRIVILEGES ON pegelbot_local.* TO 'pegelbot_local'@'localhost';"
+
+mariadb pegelbot_local < migrations/000_baseline_schema.sql
+mariadb pegelbot_local < tools/local-demo-data.sql
+```
+
+Danach in `bot/config/pegelbot-config.php` auf diese Datenbank zeigen und den Bot
+starten.
+
+> Die Demodaten enthalten die drei echten Messstellen, aber **keine Abonnements**.
+> Ein Lauf holt damit echte Messwerte von PEGELONLINE und durchläuft alle drei
+> Phasen, verschickt aber nichts. Wer Abonnements einträgt, verschickt echte
+> Nachrichten.
+
+Das Skript ist wiederholbar und räumt vorher auf.
+
+---
+
 ## Tests
 
 ```bash
