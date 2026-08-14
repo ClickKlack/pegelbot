@@ -13,5 +13,5 @@ if (PHP_SAPI !== 'cli') {
 // Basis-Konfigurationen laden
 require_once __DIR__ . "/bootstrap.php";
 
-$controller = new PegelBot\Controller($connection, $logger, $api);
+$controller = new PegelBot\Controller($connection, $logger, $api, $clock, $trendPolicy);
 $controller->run();

@@ -42,6 +42,14 @@ $api = new WSA\PegelOnlineApi(
     $logger
 );
 
+// Uhr und Regelwerk der Ganglinien. Beides wird hereingereicht, damit die
+// Fachlogik nicht selbst "jetzt" bestimmt und dadurch pruefbar bleibt.
+//
+// Die Zeitzone steht bewusst auf UTC: Das entspricht dem bisherigen Verhalten.
+// Gemeint sind die Grenzen 6 und 22 als Ortszeit - siehe Befund B3.
+$clock = new PegelBot\SystemClock();
+$trendPolicy = new PegelBot\TrendPolicy('UTC');
+
 // Datenbankverbindung
 $connection = DriverManager::getConnection($dbParams);
 

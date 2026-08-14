@@ -18,13 +18,17 @@ class MessstellenController
 
   
     protected \WSA\MeasurementApiInterface $_api;
+    protected \Psr\Clock\ClockInterface $_clock;
+    protected TrendPolicy $_trendPolicy;
 
     // Konstruktor mit Eigenschaften der Messstelle
-    public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
+    public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api, \Psr\Clock\ClockInterface $clock, TrendPolicy $trendPolicy, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
         // Objekte werden in PHP ohnehin als Handle uebergeben, deshalb ohne Referenz
-        $this->_connection = $connection;
-        $this->_logger     = $logger;
-        $this->_api        = $api;
+        $this->_connection  = $connection;
+        $this->_logger      = $logger;
+        $this->_api         = $api;
+        $this->_clock       = $clock;
+        $this->_trendPolicy = $trendPolicy;
 
         // die eigentlichen Eigenschaften übernehmen
         $this->id = $id;
@@ -56,7 +60,7 @@ class MessstellenController
             $date = new \DateTime($result[0]['letzter_zeitpunkt'], new \DateTimeZone('UTC'));
         } else {
             // wenn es noch keine Messung gibt, einfach die letzten 24h greifen
-            $date = new \DateTime("now", new \DateTimeZone('UTC'));
+            $date = \DateTime::createFromImmutable($this->_clock->now());
             $date = $date->sub(new \DateInterval('P1D'));
         }
 
@@ -283,23 +287,27 @@ class MessstellenController
             throw new \Exception("Keine Abo-Daten");
         }
 
-        $letzter_zeitpunkt = new \DateTime($this->abo_data['letzter_verlaufszeitpunkt'], new \DateTimeZone('UTC'));
-        $zeitpunkt_aktuell = new \DateTime("now", new \DateTimeZone('UTC'));
-        $time_diff = $zeitpunkt_aktuell->diff($letzter_zeitpunkt, true);
+        $letzter_zeitpunkt = new \DateTimeImmutable($this->abo_data['letzter_verlaufszeitpunkt'], new \DateTimeZone('UTC'));
+        $zeitpunkt_aktuell = $this->_clock->now();
 
         $this->_logger->info("Erstelle Verläufe für {$this->name} - Letzter: {$this->abo_data['letzter_verlaufszeitpunkt']} UTC - Aktuellster Wert: {$this->abo_data['zeitpunkt_aktuell']} UTC - min/max: {$this->abo_data['min_messwert']}/{$this->abo_data['max_messwert']}");
         echo "Erstelle Verläufe für {$this->name} - Letzter: {$this->abo_data['letzter_verlaufszeitpunkt']} UTC - Aktuellster Wert: {$this->abo_data['zeitpunkt_aktuell']} UTC - min/max: {$this->abo_data['min_messwert']}/{$this->abo_data['max_messwert']}\n";
 
-        // keine Verläufe nachts 22-6 Uhr
-        if ($zeitpunkt_aktuell->format('H') < 6 || $zeitpunkt_aktuell->format('H') > 22) {
-            $this->_logger->info("Nachtsperre");
+        // Nachtsperre und Ausloeseregel stecken in TrendPolicy und sind dort getestet
+        if ($this->_trendPolicy->isQuietTime($zeitpunkt_aktuell)) {
+            $this->_logger->info("Nachtsperre", ['zeitzone' => $this->_trendPolicy->timezoneName()]);
             echo "  Nachtsperre\n";
             return;
         }
 
-        // Prüfen ob Notify notwendig (Veränderung Wert und letztes Notify mind. 1 Tag oder letztes Notify mind. 24h her)
-        if ((abs($this->abo_data['min_messwert'] - $this->abo_data['max_messwert']) >= 50 &&  $time_diff->days >= 1) || $time_diff->days >= 7) {
-            // ja, Erstellung an alle konfigurierten Controller leiten
+        $sollSenden = $this->_trendPolicy->shouldSend(
+            $zeitpunkt_aktuell,
+            $letzter_zeitpunkt,
+            is_null($this->abo_data['min_messwert']) ? null : (int) $this->abo_data['min_messwert'],
+            is_null($this->abo_data['max_messwert']) ? null : (int) $this->abo_data['max_messwert'],
+        );
+
+        if ($sollSenden) {
             $this->sendVerlaufe();
         } else {
             $this->_logger->info("Keine Aktualisierung");
