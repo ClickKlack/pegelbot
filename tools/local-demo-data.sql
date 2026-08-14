@@ -32,6 +32,11 @@ INSERT INTO `messstellen` (`id`, `name`, `nummer`, `uuid`, `update_active`) VALU
 
 -- Vorlagen und Versandzeitpunkte.
 --
+-- WICHTIG: Fuer Messstelle 2 (Buckau) wird bewusst KEINE Zeile angelegt. So
+-- verhaelt sich die oertliche Umgebung wie die Produktion: Die Messstelle wird
+-- gemessen, faellt aber aus Phase 2 und 3 heraus, weil beide Abfragen ueber
+-- einen inneren Verbund auf diese Tabelle gehen. Siehe SPEC.md, Abschnitt 1.
+--
 -- letzter_zeitpunkt liegt zwei Tage zurueck, damit Phase 2 ausloest.
 -- letzter_verlaufszeitpunkt liegt acht Tage zurueck, damit auch Phase 3
 -- ausloest und die Ganglinie abgerufen wird.
@@ -42,11 +47,6 @@ INSERT INTO `messstelllen_abo_zuordnung`
    DATE_ADD(UTC_TIMESTAMP(), INTERVAL -8 DAY),
    'Pegel {MESSPUNKT}: {MESSWERT} cm am {DATE} um {TIME} Uhr. {TENDENZ}\r\n24h: {ENTWICKLUNG_24h} cm, 7d: {ENTWICKLUNG_7d} cm\r\n\r\n#elbe #magdeburg #strombrücke',
    'Aktualisierte Ganglinie zum Messpunkt {MESSPUNKT}\r\n\r\n#elbe #magdeburg #strombrücke'),
-  (2,
-   DATE_ADD(UTC_TIMESTAMP(), INTERVAL -2 DAY),
-   DATE_ADD(UTC_TIMESTAMP(), INTERVAL -8 DAY),
-   'Pegel {MESSPUNKT}: {MESSWERT} cm am {DATE} um {TIME} Uhr. {TENDENZ}\r\n24h: {ENTWICKLUNG_24h} cm, 7d: {ENTWICKLUNG_7d} cm\r\n\r\n#elbe #magdeburg #buckau',
-   'Aktualisierte Ganglinie zum Messpunkt {MESSPUNKT}\r\n\r\n#elbe #magdeburg #buckau'),
   (3,
    DATE_ADD(UTC_TIMESTAMP(), INTERVAL -2 DAY),
    DATE_ADD(UTC_TIMESTAMP(), INTERVAL -8 DAY),
