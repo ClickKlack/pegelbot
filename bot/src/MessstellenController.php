@@ -192,6 +192,9 @@ class MessstellenController
         // erstellt eigentliche Nachricht
         $message_text = $this->GetNotifyMessage();
 
+        // zaehlt mit, damit der Zeitpunkt nur bei tatsaechlicher Zustellung wandert
+        $outcome = new DeliveryOutcome();
+
         // alle Sendecontroller einzlen bearbeiten
         foreach($abo_types as $abo) {
             $class = __NAMESPACE__ . '\\' ."{$abo['name']}Controller";
@@ -216,7 +219,9 @@ class MessstellenController
             foreach($abo_details as $abo_data) {
                 try {
                     $controller->postNotify($abo_data, $message_text);
+                    $outcome->recordSuccess();
                 } catch (\Throwable $e) {
+                    $outcome->recordFailure($abo['name']);
                     $this->_logger->error("Fehler beim Versenden via {$abo['name']}", [
                         'exception' => $e->getMessage(),
                         'abo_id'      => $abo_data[$abo['name'].'_abo_id'] ?? '?',
@@ -227,16 +232,47 @@ class MessstellenController
             }
         }
 
-        // Zeitpunkt aktualisieren
+        $this->advanceTimestampIfPossible($outcome, 'letzter_zeitpunkt', 'Benachrichtigung');
+    }
+
+    // Schreibt den Zeitpunkt der letzten Zustellung fort, sofern das Ergebnis es zulaesst.
+    //
+    // Fruehere Fassungen schrieben bedingungslos fort, auch wenn jeder einzelne
+    // Versand gescheitert war. Die Meldung galt damit als erledigt und war
+    // dauerhaft verloren - Befund B2.
+    //
+    // @return bool true, wenn fortgeschrieben wurde
+    private function advanceTimestampIfPossible(DeliveryOutcome $outcome, string $column, string $art): bool {
+        if (!$outcome->shouldAdvanceTimestamp()) {
+            $this->_logger->warning(
+                "{$art} an keinen Empfaenger zustellbar, Zeitpunkt bleibt stehen",
+                ['name' => $this->name] + $outcome->summary()
+            );
+            echo "  Kein Versand gelungen, Zeitpunkt bleibt stehen - naechster Lauf versucht es erneut\n";
+
+            return false;
+        }
+
+        if ($outcome->isPartial()) {
+            // Der Zeitpunkt wandert trotzdem vor, die Meldung an die gescheiterten
+            // Kanaele ist damit verloren. Siehe SPEC.md, Befund B14.
+            $this->_logger->warning(
+                "{$art} nur teilweise zugestellt",
+                ['name' => $this->name] + $outcome->summary()
+            );
+        }
+
         $queryBuilder = $this->_connection->createQueryBuilder();
         $queryBuilder
             ->update('messstelllen_abo_zuordnung')
-            ->set('letzter_zeitpunkt', ':letzter_zeitpunkt')
+            ->set($column, ':zeitpunkt')
             ->where('messstellen_id = :messstellen_id')
-            ->setParameter('letzter_zeitpunkt', $this->abo_data['zeitpunkt_aktuell'])
+            ->setParameter('zeitpunkt', $this->abo_data['zeitpunkt_aktuell'])
             ->setParameter('messstellen_id', $this->id)
         ;
         $queryBuilder->executeStatement();
+
+        return true;
     }
 
     // prüft, ob eine neue Verlaufsgrafik verschickt werden kann
@@ -288,6 +324,9 @@ class MessstellenController
         // erstellt eigentliche Nachricht
         $message_text = $this->GetTrendMessage();
 
+        // zaehlt mit, damit der Zeitpunkt nur bei tatsaechlicher Zustellung wandert
+        $outcome = new DeliveryOutcome();
+
         // lädt die Verlaufsgrafik herunter
         $verlauf_image = $this->_api->fetchTrendImage($this->uuid);
         
@@ -327,7 +366,9 @@ class MessstellenController
             foreach($abo_details as $abo_data) {
                 try {
                     $controller->postTrend($abo_data, $message_text, $verlauf_image);
+                    $outcome->recordSuccess();
                 } catch (\Throwable $e) {
+                    $outcome->recordFailure($abo['name']);
                     $this->_logger->error("Fehler beim Trend-Versenden via {$abo['name']}", [
                         'exception' => $e->getMessage(),
                         'abo_id'      => $abo_data[$abo['name'].'_abo_id'] ?? '?',
@@ -338,15 +379,6 @@ class MessstellenController
             }
         }
 
-        // Zeitpunkt aktualisieren
-        $queryBuilder = $this->_connection->createQueryBuilder();
-        $queryBuilder
-            ->update('messstelllen_abo_zuordnung')
-            ->set('letzter_verlaufszeitpunkt', ':letzter_verlaufszeitpunkt')
-            ->where('messstellen_id = :messstellen_id')
-            ->setParameter('letzter_verlaufszeitpunkt', $this->abo_data['zeitpunkt_aktuell'])
-            ->setParameter('messstellen_id', $this->id)
-        ;
-        $queryBuilder->executeStatement();
+        $this->advanceTimestampIfPossible($outcome, 'letzter_verlaufszeitpunkt', 'Ganglinie');
     }
 }

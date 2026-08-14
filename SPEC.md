@@ -19,11 +19,36 @@ Ganglinien-Grafik.
 
 Produktiv überwacht werden drei Messstellen an der Elbe im Raum Magdeburg:
 
-| Name                    | UUID                                   |
-| ----------------------- | -------------------------------------- |
-| `MAGDEBURG-STROMBRÜCKE` | `ccccb57f-a2f9-4183-ae88-5710d3afaefd` |
-| `MAGDEBURG-BUCKAU`      | `b8567c1e-8610-4c2b-a240-65e8a74919fa` |
-| `ROTHENSEE`             | `e30f2e83-b80b-4b96-8f39-fa60317afcc7` |
+| ID | Name | UUID |
+| -- | ---- | ---- |
+| 1 | `MAGDEBURG-STROMBRÜCKE` | `ccccb57f-a2f9-4183-ae88-5710d3afaefd` |
+| 2 | `MAGDEBURG-BUCKAU`      | `b8567c1e-8610-4c2b-a240-65e8a74919fa` |
+| 3 | `ROTHENSEE`             | `e30f2e83-b80b-4b96-8f39-fa60317afcc7` |
+
+### Messen und Veröffentlichen sind zweierlei
+
+**Alle drei werden gemessen, nur eine veröffentlicht.** Das ist so gewollt und **kein
+Mangel** — der folgende Abschnitt ist ausdrücklich als Schutz davor gedacht, dass es
+später als Fehler „behoben" wird.
+
+| ID | Zuordnungszeile | Aktive Abonnements | Stand 13.08.2026 |
+| -- | --------------- | ------------------ | ---------------- |
+| 1 | ja | Mastodon, Bluesky | veröffentlicht |
+| 2 | **nein** | — | wird nur gemessen |
+| 3 | ja | keine | veröffentlicht derzeit nicht |
+
+- **Buckau** hatte nie ein Abonnement und besitzt bewusst keine Zeile in
+  `messstelllen_abo_zuordnung`. Da beide Versandphasen über einen **inneren Verbund**
+  auf diese Tabelle gehen, fällt die Messstelle aus Phase 2 und 3 heraus. Phase 1
+  läuft weiter, weil sie nur `update_active` auswertet. Die Messreihe wird also für
+  eine mögliche spätere Nutzung fortgeschrieben.
+- **Rothensee** hatte lange ein Twitter/X-Abonnement. Seit X dafür Geld verlangt, ist
+  es deaktiviert. Zuordnung und Vorlagen bleiben bestehen, damit ein Wiederanschalten
+  ohne Nacharbeit möglich ist. Phase 2 läuft für die Messstelle durch, findet keinen
+  Empfänger und schreibt lediglich den Zeitpunkt fort.
+
+Je Messstelle liegen rund 301.700 Messwerte vor, also gut dreieinhalb Jahre im
+Viertelstundentakt.
 
 ### 1.1 Systemkomponenten
 
@@ -477,7 +502,7 @@ nicht mehr in Frage.
 | Nr. | Schwere | Fundstelle | Beschreibung |
 | --- | ------- | ---------- | ------------ |
 | ~~B1~~ | **behoben** 13.08.2026 | `src/wsa/PegelOnlineApi.php` | `catch (ServerException $e)` ohne passenden `use`-Import: Der Name löste im Namensraum `WSA` auf und traf nie zu, jede 5xx-Antwort beendete den kompletten Lauf. Beide Methoden fangen die Ausnahme jetzt, protokollieren sie und liefern ein leeres Ergebnis; der Lauf verarbeitet die übrigen Messstellen weiter. Beim nächsten Lauf wird ab dem zuletzt gespeicherten Zeitpunkt nachgeholt. Durch fünf Tests abgedeckt. |
-| B2 | **hoch** | `src/MessstellenController.php:228` | Der Zeitpunkt der letzten Benachrichtigung wird auch dann fortgeschrieben, wenn **alle** Versandversuche fehlgeschlagen sind. Eine an einem Kanalausfall gescheiterte Benachrichtigung ist dauerhaft verloren. |
+| ~~B2~~ | **behoben** 14.08.2026 | `src/MessstellenController.php` | Der Zeitpunkt der letzten Zustellung wurde bedingungslos fortgeschrieben, auch wenn jeder Versand mit einer Ausnahme endete — die Meldung galt als erledigt und war verloren. Die Entscheidung liegt jetzt in `PegelBot\DeliveryOutcome` und unterscheidet drei Fälle: **kein Empfänger** (fortschreiben, Normalfall bei Messstellen ohne aktive Abonnements), **mindestens einer erfolgreich** (fortschreiben), **Empfänger vorhanden und alle gescheitert** (stehen lassen, Warnung ins Protokoll, nächster Lauf versucht es erneut). Gilt für Benachrichtigungen und Ganglinien gleichermaßen. Durch elf Unit-Tests abgedeckt.
 | B3 | mittel | `src/MessstellenController.php:255` | Die Nachtsperre vergleicht die **UTC**-Stunde gegen die als Ortszeit gedachten Grenzen 6 und 22. Effektiv sperrt sie in der Sommerzeit von 00 bis 08 Uhr Ortszeit. |
 | B4 | mittel | `src/wsa/WSAServices.php:59` | Das Ergebnis von `json_decode()` wird nicht geprüft. Bei ungültigem JSON iteriert die Schleife über `null`. |
 | ~~B5~~ | **entkräftet** | — | Vermutet wurde ein möglicher `NULL`-Wert bei `letzter_zeitpunkt`. Das Schema weist die Spalte als `datetime NOT NULL` aus; der Fall kann nicht eintreten. |
@@ -486,8 +511,9 @@ nicht mehr in Frage.
 | B8 | niedrig | `src/mastodonController.php:51`, `src/twitterController.php:53` | Beide Kanäle schreiben in dieselbe feste Zwischendatei `tmp/Ganglinie.png`. Bei überlappenden Läufen entsteht ein Wettlauf. |
 | ~~B9~~ | **behoben** 13.08.2026 | `src/wsa/Measurement.php` | Bestätigt: PEGELONLINE liefert die Werte **immer** als Gleitkommazahl (`38.0`), in 576 geprüften Werten zweier Messstellen keiner mit Nachkommaanteil. Die früheren Fassungen liefen ohne strikte Typen und wandelten still um. `Measurement` nimmt jetzt `int\|float` entgegen und rundet ausdrücklich, statt abzuschneiden. |
 | B10 | niedrig | `bootstrap.php:36` | Der Verbindungstest `SELECT 1 FROM dual` ist MySQL-spezifisch. |
+| B14 | niedrig | `src/DeliveryOutcome.php` | **Teilweiser Erfolg schreibt fort.** Gelingt der Versand über Mastodon und scheitert über Bluesky, wandert der Zeitpunkt trotzdem — die Bluesky-Meldung ist verloren. Sauber wäre ein Zeitpunkt **je Kanal**, `messstelllen_abo_zuordnung` führt aber nur einen für alle. Das wäre eine Schemaänderung mit Migration. Bis dahin benennt eine Warnung im Protokoll die gescheiterten Kanäle, damit es nicht unbemerkt bleibt. |
 | B13 | niedrig | `src/wsa/PegelOnlineApi.php` | Der Abfrageteil wird als fertige Zeichenkette übergeben, der Zeitzonenversatz `+00:00` also unkodiert übertragen. In einem Abfrageteil steht `+` für ein Leerzeichen, korrekt wäre `%2B`. PEGELONLINE akzeptiert es seit jeher; ein Test hält das Verhalten fest. Zu beheben, sobald die Abfrage über ein Feld statt über eine Zeichenkette gebaut wird. |
-| B11 | **hoch** | `src/MessstellenController.php:172` | `trend_template` ist `NULL` erlaubt, `GetTrendMessage()` übergibt den Wert ungeprüft an `str_replace()`. Unter PHP 8.4 ist `null` als Betreff veraltet; die erzeugte Nachricht ist leer. Das ist **kein theoretischer Fall**: Das Migrationsskript setzt die Vorlage nur für die Messstellen 1 und 3 — die dritte Messstelle hat keine. Sie postet Ganglinien ohne Text. |
+| B11 | niedrig | `src/MessstellenController.php:172` | `trend_template` erlaubt `NULL`, `GetTrendMessage()` gibt den Wert ungeprüft an `str_replace()`. Unter PHP 8.4 ist `null` als Betreff veraltet, die erzeugte Nachricht wäre leer. **Tritt derzeit nicht auf** — am 13.08.2026 geprüft: Beide vorhandenen Zuordnungen haben eine Vorlage. Bleibt als Absicherung für künftige Datensätze.
 | B12 | mittel | `src/MessstellenController.php:344` | Phase 3 ermittelt `zeitpunkt_aktuell` über eine Unterabfrage ohne Verbund auf `messwerte`. Für eine Messstelle **ohne jeden Messwert** ist der Wert `NULL` und wird in die Spalte `letzter_verlaufszeitpunkt` geschrieben, die `NOT NULL` ist — die Anweisung scheitert. Phase 2 ist davon nicht betroffen, weil sie einen inneren Verbund verwendet. Betrifft neu angelegte Messstellen. |
 
 ### 9.2 Sicherheit
@@ -605,12 +631,13 @@ Je ein Commit pro Schritt, jeweils testbegleitet:
 | ~~O1~~ | **erledigt** 13.08.2026 — vollständiges Schema liegt vor, siehe Abschnitt 6 und `migrations/000_baseline_schema.sql`. |
 | O6 | Sollen die Kanal-Zugangsdaten verschlüsselt in der Datenbank abgelegt oder in die Konfigurationsdatei verlagert werden? (betrifft S8) |
 | O7 | Umstellung von `utf8mb3` auf `utf8mb4` sowie `abonnements_mastodon` von `latin1` — als eigene Migration in Stufe 1? (betrifft D2, D3) |
-| O8 | Fehlt der dritten Messstelle tatsächlich die Ganglinien-Vorlage, oder wurde sie nachträglich gesetzt? (betrifft B11 — bitte `SELECT messstellen_id, trend_template IS NULL FROM messstelllen_abo_zuordnung` prüfen) |
+| ~~O8~~ | **beantwortet** 13.08.2026 — nein, beide vorhandenen Zuordnungen haben eine Ganglinien-Vorlage. Messstelle 2 fehlt in der Tabelle ganz, und zwar absichtlich. |
 | O9 | Wird `messstellen`.`nummer` noch für etwas benötigt, oder kann die Spalte entfallen? (betrifft D9) |
 | ~~O10~~ | **entschieden** 13.08.2026 — beide Dateien entfernt. Die Logrotation übernimmt Monolog, `mailtest.php` prüfte nicht den Mailversand. |
+| O13 | Der Twitter/X-Kanal wird nicht mehr genutzt (O4). Sollen `twitterController`, der Eintrag in `abo_types`, die Tabelle `abonnements_twitter` und die Abhängigkeit `abraham/twitteroauth` entfallen? Dagegen spricht, dass ein Wiederanschalten dann Arbeit kostet. |
 | O12 | Die abgelösten Verzeichnisse `…/pegel2/` und `…/pegel_log/` liegen noch auf dem Server, samt der alten `config.php` und einer `index.php.backup`. Können sie entfernt werden? |
 | O11 | `bot/.htaccess` liegt in einem Verzeichnis, das von keinem Webserver ausgeliefert wird, und ist damit wirkungslos. Kann die Datei entfallen? |
 | O2 | Soll der Log-Viewer ein eigenes Repository werden oder als Unterverzeichnis mitlaufen? |
 | ~~O3~~ | **beantwortet** 13.08.2026 — Gleitkommazahlen, durchweg ohne Nachkommaanteil. Siehe B9. |
-| O4 | Wird der Twitter/X-Kanal noch produktiv genutzt? |
+| ~~O4~~ | **beantwortet** 13.08.2026 — nein. Der Twitter/X-Kanal ist deaktiviert, seit X dafür Geld verlangt. Der Programmcode und die Abhängigkeit `abraham/twitteroauth` bestehen weiter; siehe O13. |
 | O5 | Sollen deutsche Bezeichner in Datenbankspalten mitmigriert werden, oder bleibt das Schema aus Bestandsgründen deutsch? |
