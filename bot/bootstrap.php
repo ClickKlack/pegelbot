@@ -51,6 +51,16 @@ $api = new WSA\PegelOnlineApi(
 $clock = new PegelBot\SystemClock();
 $trendPolicy = new PegelBot\TrendPolicy('Europe/Berlin');
 
+// Verfuegbare Versandkanaele. Sie werden hier ausdruecklich aufgebaut statt zur
+// Laufzeit aus einem Datenbankwert erzeugt - siehe Befunde T2 und S7. Welche
+// davon zum Einsatz kommen, entscheidet weiterhin die Tabelle abo_types.
+$channels = new PegelBot\ChannelRegistry([
+    new PegelBot\mailController($logger),
+    new PegelBot\blueskyController($logger),
+    new PegelBot\mastodonController($logger, new GuzzleHttp\Client()),
+    new PegelBot\twitterController($logger),
+]);
+
 // Datenbankverbindung
 $connection = DriverManager::getConnection($dbParams);
 

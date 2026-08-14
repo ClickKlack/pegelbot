@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace PegelBot;
 
-use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 
 class mastodonController extends AboController
@@ -15,17 +14,16 @@ class mastodonController extends AboController
      * Der HTTP-Client wird hereingereicht, damit die Klasse in Tests ohne Netz
      * arbeitet.
      *
-     * Er ist vorerst wahlfrei: Die Kanalcontroller werden in
-     * MessstellenController über einen dynamisch gebauten Klassennamen mit
-     * genau einem Argument erzeugt. Solange das so ist, kann hier kein
-     * Pflichtargument stehen. Fällt die dynamische Erzeugung weg, wird der
-     * Vorgabewert entfernt.
+     * Er war vorerst wahlfrei, weil die Kanalcontroller ueber einen dynamisch
+     * gebauten Klassennamen mit genau einem Argument erzeugt wurden. Seit die
+     * Kanaele in bootstrap.php aufgebaut und in der ChannelRegistry abgelegt
+     * werden, ist er Pflicht.
      */
-    public function __construct(\Monolog\Logger $logger, ?ClientInterface $client = null)
+    public function __construct(\Monolog\Logger $logger, ClientInterface $client)
     {
         parent::__construct($logger);
 
-        $this->client = $client ?? new Client();
+        $this->client = $client;
     }
 
     private function SettingMapper(array $abo_details): array
@@ -36,6 +34,11 @@ class mastodonController extends AboController
             'access_token' => $abo_details['access_token'],
             'account'      => $abo_details['beschreibung'],
         ];
+    }
+
+    public function name(): string
+    {
+        return 'mastodon';
     }
 
     public function postNotify(array $abo_details, string $message_content): void

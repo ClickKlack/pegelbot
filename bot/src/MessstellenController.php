@@ -20,19 +20,21 @@ class MessstellenController
     protected \WSA\MeasurementApiInterface $_api;
     protected \Psr\Clock\ClockInterface $_clock;
     protected TrendPolicy $_trendPolicy;
+    protected ChannelRegistry $_channels;
 
     // Zeitzone, in der Zeitpunkte in Meldungen ausgegeben werden. Intern wird
     // durchgaengig in UTC gerechnet, umgerechnet wird erst bei der Ausgabe.
     private const DISPLAY_TIMEZONE = 'Europe/Berlin';
 
     // Konstruktor mit Eigenschaften der Messstelle
-    public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api, \Psr\Clock\ClockInterface $clock, TrendPolicy $trendPolicy, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
+    public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api, \Psr\Clock\ClockInterface $clock, TrendPolicy $trendPolicy, ChannelRegistry $channels, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
         // Objekte werden in PHP ohnehin als Handle uebergeben, deshalb ohne Referenz
         $this->_connection  = $connection;
         $this->_logger      = $logger;
         $this->_api         = $api;
         $this->_clock       = $clock;
         $this->_trendPolicy = $trendPolicy;
+        $this->_channels    = $channels;
 
         // die eigentlichen Eigenschaften übernehmen
         $this->id = $id;
@@ -206,49 +208,21 @@ class MessstellenController
     private function sendNotifys() {
         $this->_logger->debug("sendNotifys({$this->name})");
 
-        // alle Sendecontroller prüfen
-        $queryBuilder = $this->_connection->createQueryBuilder();
-        $queryBuilder
-            ->select('name')
-            ->from('abo_types');
-        $abo_types = $this->_connection->fetchAllAssociative($queryBuilder);
-
-        // erstellt eigentliche Nachricht
         $message_text = $this->GetNotifyMessage();
 
         // zaehlt mit, damit der Zeitpunkt nur bei tatsaechlicher Zustellung wandert
         $outcome = new DeliveryOutcome();
 
-        // alle Sendecontroller einzlen bearbeiten
-        foreach($abo_types as $abo) {
-            $class = __NAMESPACE__ . '\\' ."{$abo['name']}Controller";
-            // prüfen ob Controller-Klasse existiert
-            if (!class_exists($class, true)) {
-                throw new \Exception("Klasse {$class} fehlt", 1);
-            }
-
-            $controller = new $class($this->_logger);
-
-            // Abos für Messstelle laden
-            $queryBuilder = $this->_connection->createQueryBuilder();
-            $queryBuilder
-                ->select('*')
-                ->from('abonnements_'.$abo['name'])
-                ->where('messstellen_id = :messstellen_id')
-                ->andWhere('aktiv = 1')
-                ->setParameter('messstellen_id', $this->id);
-
-            $abo_details = $queryBuilder->fetchAllAssociative();
-            // Abos verarbeiten lassen
-            foreach($abo_details as $abo_data) {
+        foreach($this->_channels->all() as $channel) {
+            foreach($this->getSubscriptions($channel) as $abo_data) {
                 try {
-                    $controller->postNotify($abo_data, $message_text);
+                    $channel->postNotify($abo_data, $message_text);
                     $outcome->recordSuccess();
                 } catch (\Throwable $e) {
-                    $outcome->recordFailure($abo['name']);
-                    $this->_logger->error("Fehler beim Versenden via {$abo['name']}", [
+                    $outcome->recordFailure($channel->name());
+                    $this->_logger->error("Fehler beim Versenden via {$channel->name()}", [
                         'exception' => $e->getMessage(),
-                        'abo_id'      => $abo_data[$abo['name'].'_abo_id'] ?? '?',
+                        'abo_id'      => $abo_data[$channel->subscriptionIdColumn()] ?? '?',
                         'messstellen_id' => $this->id,
                         'beschreibung' => $abo_data['beschreibung'] ?? '?',
                     ]);
@@ -257,6 +231,26 @@ class MessstellenController
         }
 
         $this->advanceTimestampIfPossible($outcome, 'letzter_zeitpunkt', 'Benachrichtigung');
+    }
+
+    /**
+     * Aktive Abonnements dieser Messstelle fuer einen Kanal.
+     *
+     * Der Tabellenname kommt vom Kanal selbst und nicht mehr aus einem
+     * Datenbankwert.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function getSubscriptions(AboInterface $channel): array {
+        $queryBuilder = $this->_connection->createQueryBuilder();
+        $queryBuilder
+            ->select('*')
+            ->from($channel->subscriptionTable())
+            ->where('messstellen_id = :messstellen_id')
+            ->andWhere('aktiv = 1')
+            ->setParameter('messstellen_id', $this->id);
+
+        return $queryBuilder->fetchAllAssociative();
     }
 
     // Schreibt den Zeitpunkt der letzten Zustellung fort, sofern das Ergebnis es zulaesst.
@@ -342,14 +336,6 @@ class MessstellenController
         $this->_logger->info("Erstelle Verläufe für {$this->name}");
         echo "Erstelle Verläufe für {$this->name}\n";
 
-        // alle Sendecontroller prüfen
-        $queryBuilder = $this->_connection->createQueryBuilder();
-        $queryBuilder
-            ->select('name')
-            ->from('abo_types');
-        $abo_types = $this->_connection->fetchAllAssociative($queryBuilder);
-
-        // erstellt eigentliche Nachricht
         $message_text = $this->GetTrendMessage();
 
         // zaehlt mit, damit der Zeitpunkt nur bei tatsaechlicher Zustellung wandert
@@ -357,49 +343,23 @@ class MessstellenController
 
         // lädt die Verlaufsgrafik herunter
         $verlauf_image = $this->_api->fetchTrendImage($this->uuid);
-        
-        if (is_null($verlauf_image) || strlen($verlauf_image) < 1) {
+
+        if (strlen($verlauf_image) < 1) {
             // da ist nichts zum verschicken
             return;
         }
 
-        // alle Sendecontroller einzlen bearbeiten
-        foreach($abo_types as $abo) {
-            $class = __NAMESPACE__ . '\\' ."{$abo['name']}Controller";
-            // prüfen ob Controller-Klasse existiert
-            if (!class_exists($class, true)) {
-                throw new \Exception("Klasse {$class} fehlt", 1);
-            }
-
-            $controller = new $class($this->_logger);
-
-            if (!$controller->supportsTrend()) {
-                $this->_logger->info("Controller unterstützt keinen Verlauf, wird übersprungen", [
-                    'controller' => $abo['name']
-                ]);
-                continue; // äußerer foreach($abo_types)-Loop
-            }
-
-            // Abos für Messstelle laden
-            $queryBuilder = $this->_connection->createQueryBuilder();
-            $queryBuilder
-                ->select('*')
-                ->from('abonnements_'.$abo['name'])
-                ->where('messstellen_id = :messstellen_id')
-                ->andWhere('aktiv = 1')
-                ->setParameter('messstellen_id', $this->id);
-
-            $abo_details = $queryBuilder->fetchAllAssociative();
-            // Abos verarbeiten lassen
-            foreach($abo_details as $abo_data) {
+        // Kanaele ohne Bildunterstuetzung filtert die Registrierung heraus
+        foreach($this->_channels->supportingTrend() as $channel) {
+            foreach($this->getSubscriptions($channel) as $abo_data) {
                 try {
-                    $controller->postTrend($abo_data, $message_text, $verlauf_image);
+                    $channel->postTrend($abo_data, $message_text, $verlauf_image);
                     $outcome->recordSuccess();
                 } catch (\Throwable $e) {
-                    $outcome->recordFailure($abo['name']);
-                    $this->_logger->error("Fehler beim Trend-Versenden via {$abo['name']}", [
+                    $outcome->recordFailure($channel->name());
+                    $this->_logger->error("Fehler beim Trend-Versenden via {$channel->name()}", [
                         'exception' => $e->getMessage(),
-                        'abo_id'      => $abo_data[$abo['name'].'_abo_id'] ?? '?',
+                        'abo_id'      => $abo_data[$channel->subscriptionIdColumn()] ?? '?',
                         'messstellen_id' => $this->id,
                         'beschreibung' => $abo_data['beschreibung'] ?? '?',
                     ]);

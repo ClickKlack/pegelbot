@@ -14,6 +14,11 @@ class blueskyController extends AboController
         ];
     }
 
+    public function name(): string
+    {
+        return 'bluesky';
+    }
+
     public function postNotify(array $abo_details, string $message_content): void
     {
         $this->_logger->debug("[Bluesky] postNotify()", ['handle' => $abo_details['handle']]);

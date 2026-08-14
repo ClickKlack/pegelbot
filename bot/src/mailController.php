@@ -8,6 +8,11 @@ use PHPMailer\PHPMailer\Exception;
 
 class mailController extends AboController
 {
+    public function name(): string
+    {
+        return 'mail';
+    }
+
     public function postNotify(array $abo_details, string $message_content): void
     {
         $this->_logger->debug("[Mail] postNotify()", ['receiver' => $abo_details['email']]);

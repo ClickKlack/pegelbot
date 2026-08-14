@@ -212,12 +212,21 @@ Ganglinien unterstützen. Ein leeres Ergebnis führt zum stillen Abbruch ohne Ve
 
 Der Versand ist datengetrieben und über Namenskonvention aufgelöst:
 
-1. Aus der Tabelle der Kanaltypen werden alle aktiven Kanalnamen gelesen.
-2. Pro Name wird die Klasse `PegelBot\{name}Controller` per `class_exists()` geprüft und
-   instanziiert. Fehlt sie, wird eine Exception geworfen.
-3. Aus der Tabelle `abonnements_{name}` werden alle Abonnements der Messstelle mit
+1. Die verfügbaren Kanäle werden beim Start in `bootstrap.php` aufgebaut und in
+   `PegelBot\ChannelRegistry` abgelegt.
+2. **Einmal je Lauf** werden aus der Tabelle der Kanaltypen die freigeschalteten
+   Namen gelesen und in Instanzen aufgelöst. Ein Name ohne eingetragenen Kanal wird
+   auf `ERROR`-Ebene protokolliert und übersprungen — samt Liste der vorhandenen
+   Kanäle, weil ein Tippfehler der wahrscheinlichste Grund ist. Der Lauf geht
+   weiter: Ein Konfigurationsfehler bei einem Kanal soll den Versand über die
+   übrigen nicht verhindern.
+3. Aus `$channel->subscriptionTable()` werden alle Abonnements der Messstelle mit
    `aktiv = 1` geladen.
 4. Je Abonnement wird `postNotify()` bzw. `postTrend()` aufgerufen.
+
+Bis zum 14.08.2026 wurden Klassen- und Tabellenname zur Laufzeit aus dem
+Datenbankwert zusammengesetzt (`new $class`, `'abonnements_' . $name`). Das war weder
+ersetzbar noch prüfbar und baute Bezeichner aus Datenbankinhalten.
 
 Fehler werden **pro Abonnement** gefangen und protokolliert. Ein ausgefallener Kanal
 blockiert die übrigen nicht.
@@ -226,6 +235,9 @@ blockiert die übrigen nicht.
 
 ```php
 interface AboInterface {
+    public function name(): string;                 // Schluessel, passend zu abo_types
+    public function subscriptionTable(): string;    // Tabelle der Abonnements
+    public function subscriptionIdColumn(): string; // Schluesselspalte, fuer Protokolle
     public function postNotify(array $abo_details, string $message_content);
     public function postTrend(array $abo_details, string $message_content, string $image);
     public function supportsTrend(): bool;
@@ -559,7 +571,7 @@ nicht mehr in Frage.
 | ~~S4~~ | **behoben** 13.08.2026 | Fehlende Begrenzung der Anmeldeversuche, kein CSRF-Schutz, keine Sitzungserneuerung — alle drei jetzt umgesetzt und getestet, siehe Abschnitt 7.3. |
 | ~~S5~~ | **behoben** 13.08.2026 | Der Vergleich läuft über `password_verify()` und ist damit laufzeitkonstant. |
 | S6 | niedrig | E-Mail-Adressen von Abonnenten werden im Klartext protokolliert. |
-| S7 | niedrig | Tabellen- und Klassennamen werden aus Datenbankinhalten zusammengesetzt. Der Inhalt ist zwar selbst verwaltet, das Muster bleibt aber angreifbar. |
+| ~~S7~~ | **behoben** 14.08.2026 | Klassen- und Tabellennamen wurden aus Datenbankinhalten zusammengesetzt. Beides kommt jetzt vom Kanal selbst: `name()`, `subscriptionTable()` und `subscriptionIdColumn()` gehören zum Vertrag. `abo_types` wählt nur noch aus, was eingetragen ist. |
 | ~~S9~~ | **entschärft** 13.08.2026 | Das Dokument beschrieb ungeschlossene Schwachstellen eines laufenden Systems und war damit vor einer Veröffentlichung selbst ein Risiko. Mit der Behebung von S2, S4 und S5 beschreibt es an dieser Stelle nur noch geschlossene Befunde. Vor der Übertragung ist zu prüfen, ob neu hinzugekommene offene Befunde denselben Vorbehalt auslösen. |
 | ~~S10~~ | **behoben** 13.08.2026 | 13 bekannte Schwachstellen in `guzzlehttp/guzzle` 7.8.1 und `guzzlehttp/psr7` 2.6.2. Mit der Zusammenführung der Abhängigkeiten aktualisiert; `composer audit` meldet nichts mehr. Nebeneffekt: Unter PHP 8.5 traten Deprecation-Meldungen aus den alten Bibliotheken auf, die damit ebenfalls entfallen. |
 | S8 | **hoch** | Alle Kanal-Zugangsdaten liegen **unverschlüsselt** in der Datenbank: OAuth-Schlüssel und -Geheimnisse (Twitter), Anwendungskennwörter (Bluesky), Zugriffsmarken (Mastodon). Ein Datenbankauszug — etwa der zur Fehlersuche erstellte — gibt damit sämtliche Konten preis. Auszüge dieser Tabellen dürfen niemals versioniert oder weitergegeben werden. |
@@ -588,7 +600,7 @@ Der Code ist im gegenwärtigen Zustand **nicht sinnvoll unit-testbar**. Ursachen
 | Nr. | Hindernis | Auswirkung |
 | --- | --------- | ---------- |
 | ~~T1~~ | **behoben** 13.08.2026 — `WSA\MeasurementApiInterface` mit der Umsetzung `WSA\PegelOnlineApi`. HTTP-Client und Protokoll werden hereingereicht, die Klasse ist über den Konstruktor einschleusbar. Die statische Klasse `WSAServices` ist entfallen. | — |
-| T2 | Kanal-Controller werden per `new $class(...)` aus einem Datenbankwert erzeugt | Keine Einschleusung von Testdoubles möglich |
+| ~~T2~~ | **behoben** 14.08.2026 — Die Kanäle werden in `bootstrap.php` aufgebaut und in `PegelBot\ChannelRegistry` abgelegt. `new $class` aus einem Datenbankwert ist entfallen. | — 
 | T3 | `new \DateTime("now")` steht direkt in der Fachlogik | Nachtsperre und alle Zeitschwellen sind nicht deterministisch prüfbar |
 | T4 | `echo` ist mit der Fachlogik vermischt | Ausgabe nicht abtrennbar, Ergebnisse nicht prüfbar |
 | T5 | Konfiguration über globale `define()`-Konstanten | Pro Prozess nur einmal setzbar |

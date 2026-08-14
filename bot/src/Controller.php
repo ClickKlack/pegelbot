@@ -11,6 +11,7 @@ class Controller {
     protected \WSA\MeasurementApiInterface $_api;
     protected \Psr\Clock\ClockInterface $_clock;
     protected TrendPolicy $_trendPolicy;
+    protected ChannelRegistry $_channels;
 
     /**
      * constructor
@@ -20,13 +21,15 @@ class Controller {
         \Monolog\Logger $logger,
         \WSA\MeasurementApiInterface $api,
         \Psr\Clock\ClockInterface $clock,
-        TrendPolicy $trendPolicy
+        TrendPolicy $trendPolicy,
+        ChannelRegistry $channels
     ) {
         $this->_connection  = $connection;
         $this->_logger      = $logger;
         $this->_api         = $api;
         $this->_clock       = $clock;
         $this->_trendPolicy = $trendPolicy;
+        $this->_channels    = $channels;
     }
 
     /**
@@ -36,11 +39,51 @@ class Controller {
 
         $this->_logger->info('Start');
 
+        // Einmal je Lauf aufloesen, welche Kanaele freigeschaltet sind. Vorher
+        // fragte jede Messstelle in jeder Phase erneut ab - bei drei Messstellen
+        // vier Abfragen statt einer. Und eine Meldung ueber einen unbekannten
+        // Kanal waere entsprechend oft im Protokoll gelandet.
+        $this->_channels = $this->resolveActiveChannels();
+
         $this->verarbeiteMessstellen();
         $this->verarbeiteAbos();
         $this->verarbeiteAbosVerlauf();
 
         $this->_logger->info('Ende');
+    }
+
+    /**
+     * Ermittelt die freigeschalteten Kanaele aus abo_types.
+     *
+     * Ein Name ohne eingetragenen Kanal wird protokolliert und uebersprungen.
+     * Frueher brach der Lauf an dieser Stelle ab - eine verwaiste Zeile
+     * verhinderte damit saemtliche Benachrichtigungen, auch die der uebrigen
+     * Kanaele.
+     */
+    private function resolveActiveChannels(): ChannelRegistry {
+        $queryBuilder = $this->_connection->createQueryBuilder();
+        $queryBuilder
+            ->select('name')
+            ->from('abo_types');
+
+        $enabled = array_map(
+            static fn (array $row): string => (string) $row['name'],
+            $this->_connection->fetchAllAssociative($queryBuilder)
+        );
+
+        foreach ($this->_channels->unknown($enabled) as $name) {
+            $this->_logger->error('Unbekannter Kanal in abo_types, wird uebersprungen', [
+                'kanal'     => $name,
+                'vorhanden' => implode(', ', $this->_channels->names()),
+            ]);
+            echo "  Unbekannter Kanal '{$name}' in abo_types, wird uebersprungen\n";
+        }
+
+        $active = new ChannelRegistry($this->_channels->selectAvailable($enabled));
+
+        $this->_logger->debug('Aktive Kanaele', ['kanaele' => implode(', ', $active->names())]);
+
+        return $active;
     }
 
     private function verarbeiteMessstellen() {
@@ -60,7 +103,7 @@ class Controller {
         $messtellen = array();
         $sql = "SELECT id, name, nummer, uuid FROM messstellen WHERE update_active = 1";
         foreach ($this->_connection->iterateAssociativeIndexed($sql) as $id => $data) {
-            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $this->_clock, $this->_trendPolicy, $id, $data['name'], $data['nummer'], $data['uuid']);
+            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $this->_clock, $this->_trendPolicy, $this->_channels, $id, $data['name'], $data['nummer'], $data['uuid']);
         }
       
         return $messtellen;
@@ -93,7 +136,7 @@ class Controller {
         INNER JOIN messwerte wa ON wa.messstellen_id = m.id AND wa.zeitpunkt = (SELECT max(mwi.zeitpunkt) FROM messwerte mwi WHERE mwi.messstellen_id = m.id)
         AND m.update_active = 1";
         foreach ($this->_connection->iterateAssociativeIndexed($sql) as $id => $data) {
-            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $this->_clock, $this->_trendPolicy, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
+            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $this->_clock, $this->_trendPolicy, $this->_channels, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
         }
       
         return $messtellen;
@@ -121,7 +164,7 @@ class Controller {
         INNER JOIN messstelllen_abo_zuordnung a ON m.id = a.messstellen_id
         AND m.update_active = 1";
         foreach ($this->_connection->iterateAssociativeIndexed($sql) as $id => $data) {
-            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $this->_clock, $this->_trendPolicy, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
+            $messtellen[] = new MessstellenController($this->_connection, $this->_logger, $this->_api, $this->_clock, $this->_trendPolicy, $this->_channels, $id, $data['name'], $data['nummer'], $data['uuid'], $data);
         }
       
         return $messtellen;

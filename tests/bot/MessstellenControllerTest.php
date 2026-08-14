@@ -9,6 +9,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Monolog\Logger;
+use PegelBot\ChannelRegistry;
 use PegelBot\MessstellenController;
 use PegelBot\TrendPolicy;
 use PHPUnit\Framework\TestCase;
@@ -25,6 +26,7 @@ final class MessstellenControllerTest extends TestCase
             $this->createMock(MeasurementApiInterface::class),
             new FrozenClock('2026-08-14 14:00:00'),
             new TrendPolicy('Europe/Berlin'),
+            new ChannelRegistry(),
             1,
             'MAGDEBURG-STROMBRÜCKE',
             501,

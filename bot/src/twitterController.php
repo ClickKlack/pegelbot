@@ -18,6 +18,11 @@ class twitterController extends AboController
         ];
     }
 
+    public function name(): string
+    {
+        return 'twitter';
+    }
+
     public function postNotify(array $abo_details, string $message_content): void
     {
         $this->_logger->debug("[Twitter] postNotify()", ['account' => $abo_details['beschreibung']]);
