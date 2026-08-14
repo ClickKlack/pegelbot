@@ -128,8 +128,19 @@ class MessstellenController
         $zeitpunkt_aktuell = new \DateTime($this->abo_data['zeitpunkt_aktuell'], new \DateTimeZone('UTC'));
         $time_diff = $zeitpunkt_aktuell->diff($letzter_zeitpunkt, true);
 
-        $this->_logger->info("Erstelle Notifys für {$this->name} - Letzter Wert: {$this->abo_data['letzter_messwert']} ({$this->abo_data['letzter_zeitpunkt']} UTC) - Aktuellster Wert: {$this->abo_data['messwert_aktuell']} ({$this->abo_data['zeitpunkt_aktuell']} UTC)");
-        echo "Erstelle Notifys für {$this->name} - Letzter Wert: {$this->abo_data['letzter_messwert']} ({$this->abo_data['letzter_zeitpunkt']} UTC) - Aktuellster Wert: {$this->abo_data['messwert_aktuell']} ({$this->abo_data['zeitpunkt_aktuell']} UTC)\n";
+        // Ein fehlender Vorwert wird ausdruecklich benannt. Eine leere Stelle
+        // hinter "Letzter Wert:" sah nach Fehler aus, ist aber der Normalfall,
+        // solange letzter_zeitpunkt auf keinen gespeicherten Messzeitpunkt trifft.
+        $letzter_wert = is_null($this->abo_data['letzter_messwert'])
+            ? '(keiner)'
+            : $this->abo_data['letzter_messwert'];
+
+        $meldung = "Erstelle Notifys für {$this->name}"
+            . " - Letzter Wert: {$letzter_wert} ({$this->abo_data['letzter_zeitpunkt']} UTC)"
+            . " - Aktuellster Wert: {$this->abo_data['messwert_aktuell']} ({$this->abo_data['zeitpunkt_aktuell']} UTC)";
+
+        $this->_logger->info($meldung);
+        echo $meldung . "\n";
 
         // Prüfen ob Notify notwendig (Veränderung Wert oder letztes Notify mind. 24h her)
         if ((!is_null($this->abo_data['letzter_messwert']) && $this->abo_data['letzter_messwert'] <> $this->abo_data['messwert_aktuell']) || $time_diff->days >= 1) {

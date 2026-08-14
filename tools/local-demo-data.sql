@@ -40,16 +40,22 @@ INSERT INTO `messstellen` (`id`, `name`, `nummer`, `uuid`, `update_active`) VALU
 -- letzter_zeitpunkt liegt zwei Tage zurueck, damit Phase 2 ausloest.
 -- letzter_verlaufszeitpunkt liegt acht Tage zurueck, damit auch Phase 3
 -- ausloest und die Ganglinie abgerufen wird.
+--
+-- Beide Zeitpunkte werden auf eine volle Viertelstunde abgerundet. PEGELONLINE
+-- liefert die Messwerte im Viertelstundentakt, und die Abfrage in Phase 2
+-- verbindet ueber exakte Gleichheit des Zeitpunkts. Mit einer beliebigen
+-- Sekunde faende sie nie einen Vorwert, und die Ausgabe zeigte dauerhaft
+-- "Letzter Wert: (keiner)" - was nach Fehler aussieht, aber keiner waere.
 INSERT INTO `messstelllen_abo_zuordnung`
   (`messstellen_id`, `letzter_zeitpunkt`, `letzter_verlaufszeitpunkt`, `message_template`, `trend_template`) VALUES
   (1,
-   DATE_ADD(UTC_TIMESTAMP(), INTERVAL -2 DAY),
-   DATE_ADD(UTC_TIMESTAMP(), INTERVAL -8 DAY),
+   FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(UTC_TIMESTAMP() - INTERVAL 2 DAY) / 900) * 900),
+   FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(UTC_TIMESTAMP() - INTERVAL 8 DAY) / 900) * 900),
    'Pegel {MESSPUNKT}: {MESSWERT} cm am {DATE} um {TIME} Uhr. {TENDENZ}\r\n24h: {ENTWICKLUNG_24h} cm, 7d: {ENTWICKLUNG_7d} cm\r\n\r\n#elbe #magdeburg #strombrücke',
    'Aktualisierte Ganglinie zum Messpunkt {MESSPUNKT}\r\n\r\n#elbe #magdeburg #strombrücke'),
   (3,
-   DATE_ADD(UTC_TIMESTAMP(), INTERVAL -2 DAY),
-   DATE_ADD(UTC_TIMESTAMP(), INTERVAL -8 DAY),
+   FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(UTC_TIMESTAMP() - INTERVAL 2 DAY) / 900) * 900),
+   FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(UTC_TIMESTAMP() - INTERVAL 8 DAY) / 900) * 900),
    'Pegel {MESSPUNKT}: {MESSWERT} cm am {DATE} um {TIME} Uhr. {TENDENZ}\r\n24h: {ENTWICKLUNG_24h} cm, 7d: {ENTWICKLUNG_7d} cm\r\n\r\n#elbe #magdeburg #rothensee',
    'Aktualisierte Ganglinie zum Messpunkt {MESSPUNKT}\r\n\r\n#elbe #magdeburg #rothensee');
 
