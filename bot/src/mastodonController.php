@@ -1,10 +1,33 @@
 <?php
-// src/mastodonController.php
+
+declare(strict_types=1);
 
 namespace PegelBot;
 
+use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
+
 class mastodonController extends AboController
 {
+    private ClientInterface $client;
+
+    /**
+     * Der HTTP-Client wird hereingereicht, damit die Klasse in Tests ohne Netz
+     * arbeitet.
+     *
+     * Er ist vorerst wahlfrei: Die Kanalcontroller werden in
+     * MessstellenController über einen dynamisch gebauten Klassennamen mit
+     * genau einem Argument erzeugt. Solange das so ist, kann hier kein
+     * Pflichtargument stehen. Fällt die dynamische Erzeugung weg, wird der
+     * Vorgabewert entfernt.
+     */
+    public function __construct(\Monolog\Logger $logger, ?ClientInterface $client = null)
+    {
+        parent::__construct($logger);
+
+        $this->client = $client ?? new Client();
+    }
+
     private function SettingMapper(array $abo_details): array
     {
         return [
@@ -37,7 +60,7 @@ class mastodonController extends AboController
 
         try {
             $headers = [
-                'Authorization: Bearer ' . $settings['access_token'],
+                'Authorization' => 'Bearer ' . $settings['access_token'],
             ];
 
             $media_ids = [];
@@ -46,41 +69,35 @@ class mastodonController extends AboController
             if (!is_null($image)) {
                 $this->_logger->debug("[Mastodon] Starte Media-Upload");
 
-                $media_url = $settings['server'] . '/api/v2/media';
-
-                $tmp_file = __DIR__ . "/../tmp/Ganglinie.png";
-                if (file_put_contents($tmp_file, $image) === false) {
-                    throw new \RuntimeException("Konnte temporäre Bilddatei nicht schreiben: {$tmp_file}");
-                }
-
-                $ch_media = curl_init();
-                curl_setopt($ch_media, CURLOPT_URL, $media_url);
-                curl_setopt($ch_media, CURLOPT_POST, 1);
-                curl_setopt($ch_media, CURLOPT_POSTFIELDS, [
-                    'file' => new \CURLFile($tmp_file, 'image/png', 'Ganglinie.png'),
+                $media_response = $this->client->request('POST', $settings['server'] . '/api/v2/media', [
+                    'headers'   => $headers,
+                    'multipart' => [
+                        [
+                            'name'     => 'file',
+                            'contents' => $image,
+                            'filename' => 'Ganglinie.png',
+                            'headers'  => ['Content-Type' => 'image/png'],
+                        ],
+                    ],
+                    // Wie zuvor mit cURL wird Umleitungen nicht gefolgt: Eine
+                    // umgeleitete Anfrage verlöre sonst die POST-Methode.
+                    'http_errors'     => false,
+                    'allow_redirects' => false,
                 ]);
-                curl_setopt($ch_media, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch_media, CURLOPT_HTTPHEADER, $headers);
 
-                $media_response = json_decode(curl_exec($ch_media));
-                $media_http_code = curl_getinfo($ch_media, CURLINFO_HTTP_CODE);
-                $curl_error = curl_error($ch_media);
-                curl_close($ch_media);
-
-                if ($curl_error) {
-                    throw new \RuntimeException("[Mastodon] cURL-Fehler beim Media-Upload: {$curl_error}");
-                }
+                $media_http_code = $media_response->getStatusCode();
+                $media_payload   = json_decode((string) $media_response->getBody());
 
                 if ($media_http_code !== 200 && $media_http_code !== 202) {
-                    throw new \RuntimeException("[Mastodon] Media-Upload fehlgeschlagen (HTTP {$media_http_code}): " . json_encode($media_response));
+                    throw new \RuntimeException("[Mastodon] Media-Upload fehlgeschlagen (HTTP {$media_http_code}): " . json_encode($media_payload));
                 }
 
-                if (empty($media_response->id)) {
+                if (empty($media_payload->id)) {
                     throw new \RuntimeException("[Mastodon] Media-Upload fehlgeschlagen – keine media_id erhalten");
                 }
 
-                $this->_logger->info("[Mastodon] Media-Upload erfolgreich", ['media_id' => $media_response->id]);
-                $media_ids[] = $media_response->id;
+                $this->_logger->info("[Mastodon] Media-Upload erfolgreich", ['media_id' => $media_payload->id]);
+                $media_ids[] = $media_payload->id;
             }
 
             // Status posten
@@ -94,21 +111,19 @@ class mastodonController extends AboController
                 $status_data['media_ids'] = $media_ids;
             }
 
-            $ch_status = curl_init();
-            curl_setopt($ch_status, CURLOPT_URL, $settings['server'] . $settings['status_api']);
-            curl_setopt($ch_status, CURLOPT_POST, 1);
-            curl_setopt($ch_status, CURLOPT_POSTFIELDS, $status_data);
-            curl_setopt($ch_status, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch_status, CURLOPT_HTTPHEADER, $headers);
+            // Bewusst als JSON: In einem Formular-Rumpf fällt die Liste der
+            // media_ids in sich zusammen und kommt als bloße Zeichenkette an.
+            // Mastodon verwirft sie dann stillschweigend — der Beitrag erscheint
+            // ohne Bild, obwohl der Upload gelungen ist.
+            $status_response = $this->client->request('POST', $settings['server'] . $settings['status_api'], [
+                'headers'     => $headers,
+                'json'        => $status_data,
+                'http_errors'     => false,
+                'allow_redirects' => false,
+            ]);
 
-            $response = json_decode(curl_exec($ch_status));
-            $http_code = curl_getinfo($ch_status, CURLINFO_HTTP_CODE);
-            $curl_error = curl_error($ch_status);
-            curl_close($ch_status);
-
-            if ($curl_error) {
-                throw new \RuntimeException("[Mastodon] cURL-Fehler beim Posting: {$curl_error}");
-            }
+            $http_code = $status_response->getStatusCode();
+            $response  = json_decode((string) $status_response->getBody());
 
             if ($http_code !== 200) {
                 $this->_logger->error("[Mastodon] Post fehlgeschlagen", [
@@ -124,7 +139,7 @@ class mastodonController extends AboController
                 'post_id'  => $response->id ?? 'unbekannt',
                 'post_url' => $response->url ?? 'unbekannt',
             ]);
-            
+
             echo "  [Mastodon] Post für {$settings['account']} erstellt\n";
 
         } catch (\Throwable $e) {

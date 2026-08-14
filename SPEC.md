@@ -241,7 +241,7 @@ Vorgabewert `true`.
 | ---------- | ------------------------------- | --------------------------------------------------------------------------- |
 | `mail`     | PHPMailer                       | `email`                                                                     |
 | `bluesky`  | `cjrasmussen/bluesky-api`       | `handle`, `passwort`                                                        |
-| `mastodon` | cURL direkt gegen die REST-API  | `server`, `status_api`, `access_token`, `beschreibung`                      |
+| `mastodon` | Guzzle gegen die REST-API       | `server`, `status_api`, `access_token`, `beschreibung`                      |
 | `twitter`  | `abraham/twitteroauth`          | `consumer_key`, `consumer_secret`, `oauth_access_token`, `oauth_access_token_secret`, `beschreibung` |
 
 Besonderheiten:
@@ -250,8 +250,10 @@ Besonderheiten:
   Dateianhang `Ganglinie.png` angehängt.
 - **Bluesky:** Bild-Upload über `com.atproto.repo.uploadBlob`, Post über
   `com.atproto.repo.createRecord`, Sprache fest `de`.
-- **Mastodon:** Bild wird über eine Zwischendatei hochgeladen, Sichtbarkeit fest `unlisted`,
-  Sprache fest `de`. Akzeptierte HTTP-Codes beim Upload: 200 und 202.
+- **Mastodon:** Bild-Upload über `/api/v2/media` als `multipart/form-data` direkt aus dem
+  Speicher, Status über `status_api` als **JSON-Rumpf** — die `media_ids` müssen eine
+  echte Liste sein (siehe B15). Sichtbarkeit fest `unlisted`, Sprache fest `de`.
+  Akzeptierte HTTP-Codes beim Upload: 200 und 202. Umleitungen werden nicht verfolgt.
 - **Twitter:** Medien-Upload über API v1.1, Tweet über API v2. Erfolgskriterium HTTP 201.
 
 ---
@@ -537,12 +539,13 @@ nicht mehr in Frage.
 | ~~B5~~ | **entkräftet** | — | Vermutet wurde ein möglicher `NULL`-Wert bei `letzter_zeitpunkt`. Das Schema weist die Spalte als `datetime NOT NULL` aus; der Fall kann nicht eintreten. |
 | B6 | mittel | `src/MessstellenController.php:64` | Einfügen der Messwerte ohne Transaktion. Der Primärschlüssel (`messstellen_id`, `zeitpunkt`) schließt Doppeleinträge zwar aus, wandelt sie aber in eine **Verletzung der Eindeutigkeitsbedingung** um. Diese wird nicht gefangen und beendet den Lauf; die zuvor eingefügten Werte bleiben als Teilzustand zurück. Auslöser: überlappende Läufe oder wiederholte Zeitstempel in einer API-Antwort. |
 | B7 | niedrig | `src/MessstellenController.php:291` | Prüfung auf `null` bei einer Methode mit Rückgabetyp `string` — toter Code. |
-| B8 | niedrig | `src/mastodonController.php:51`, `src/twitterController.php:53` | Beide Kanäle schreiben in dieselbe feste Zwischendatei `tmp/Ganglinie.png`. Bei überlappenden Läufen entsteht ein Wettlauf. |
+| B8 | niedrig | `src/twitterController.php:53` | Der Kanal schreibt in die feste Zwischendatei `tmp/Ganglinie.png`. Bei überlappenden Läufen entsteht ein Wettlauf. Mastodon ist seit der Behebung von B15 nicht mehr betroffen — der Upload läuft dort aus dem Speicher. |
 | ~~B9~~ | **behoben** 13.08.2026 | `src/wsa/Measurement.php` | Bestätigt: PEGELONLINE liefert die Werte **immer** als Gleitkommazahl (`38.0`), in 576 geprüften Werten zweier Messstellen keiner mit Nachkommaanteil. Die früheren Fassungen liefen ohne strikte Typen und wandelten still um. `Measurement` nimmt jetzt `int\|float` entgegen und rundet ausdrücklich, statt abzuschneiden. |
 | B10 | niedrig | `bootstrap.php:36` | Der Verbindungstest `SELECT 1 FROM dual` ist MySQL-spezifisch. |
 | B14 | niedrig | `src/DeliveryOutcome.php` | **Teilweiser Erfolg schreibt fort.** Gelingt der Versand über Mastodon und scheitert über Bluesky, wandert der Zeitpunkt trotzdem — die Bluesky-Meldung ist verloren. Sauber wäre ein Zeitpunkt **je Kanal**, `messstelllen_abo_zuordnung` führt aber nur einen für alle. Das wäre eine Schemaänderung mit Migration. Bis dahin benennt eine Warnung im Protokoll die gescheiterten Kanäle, damit es nicht unbemerkt bleibt. |
 | B13 | niedrig | `src/wsa/PegelOnlineApi.php` | Der Abfrageteil wird als fertige Zeichenkette übergeben, der Zeitzonenversatz `+00:00` also unkodiert übertragen. In einem Abfrageteil steht `+` für ein Leerzeichen, korrekt wäre `%2B`. PEGELONLINE akzeptiert es seit jeher; ein Test hält das Verhalten fest. Zu beheben, sobald die Abfrage über ein Feld statt über eine Zeichenkette gebaut wird. |
 | B11 | niedrig | `src/MessstellenController.php:172` | `trend_template` erlaubt `NULL`, `GetTrendMessage()` gibt den Wert ungeprüft an `str_replace()`. Unter PHP 8.4 ist `null` als Betreff veraltet, die erzeugte Nachricht wäre leer. **Tritt derzeit nicht auf** — am 13.08.2026 geprüft: Beide vorhandenen Zuordnungen haben eine Vorlage. Bleibt als Absicherung für künftige Datensätze.
+| ~~B15~~ | **behoben** 14.08.2026 | `src/mastodonController.php` | **Ganglinien erschienen auf Mastodon ohne Bild.** Der Status wurde als Formular-Rumpf gesendet, `media_ids` ist dort aber eine Liste. cURL bildet verschachtelte Arrays in `multipart/form-data` nicht ab und übertrug statt der Liste nur deren einzigen Wert als Feld `media_ids`. Mastodon erwartet `media_ids[]` und verwarf die skalare Angabe stillschweigend: HTTP 200, Beitrag vorhanden, Bild fehlt. Der Upload selbst war nie das Problem — er meldete im Protokoll durchgehend Erfolg. Der Status geht jetzt als JSON hinaus, damit die Liste eine Liste bleibt. Bluesky war nicht betroffen, weil dort der gesamte Datensatz als JSON übertragen wird. Der HTTP-Client ist zugleich einschleusbar geworden; elf Unit-Tests decken den Kanal ab. |
 | B12 | mittel | `src/MessstellenController.php:344` | Phase 3 ermittelt `zeitpunkt_aktuell` über eine Unterabfrage ohne Verbund auf `messwerte`. Für eine Messstelle **ohne jeden Messwert** ist der Wert `NULL` und wird in die Spalte `letzter_verlaufszeitpunkt` geschrieben, die `NOT NULL` ist — die Anweisung scheitert. Phase 2 ist davon nicht betroffen, weil sie einen inneren Verbund verwendet. Betrifft neu angelegte Messstellen. |
 
 ### 9.2 Sicherheit
@@ -670,3 +673,4 @@ Je ein Commit pro Schritt, jeweils testbegleitet:
 | ~~O3~~ | **beantwortet** 13.08.2026 — Gleitkommazahlen, durchweg ohne Nachkommaanteil. Siehe B9. |
 | ~~O4~~ | **beantwortet** 13.08.2026 — nein. Der Twitter/X-Kanal ist deaktiviert, seit X dafür Geld verlangt. Der Programmcode und die Abhängigkeit `abraham/twitteroauth` bestehen weiter; siehe O13. |
 | O5 | Sollen deutsche Bezeichner in Datenbankspalten mitmigriert werden, oder bleibt das Schema aus Bestandsgründen deutsch? |
+| O14 | Antwortet Mastodon beim Medien-Upload mit **202**, läuft die Verarbeitung noch. Der Kanal postet den Status trotzdem sofort. Bei den rund 19 kB großen Ganglinien kam bisher stets 200; sauber wäre ein Warten auf `/api/v1/media/{id}`, bis 200 zurückkommt. Lohnt der Aufwand? |
