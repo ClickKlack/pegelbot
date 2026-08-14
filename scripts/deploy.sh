@@ -333,6 +333,25 @@ else
     else
         fail "bot/bootstrap.php laeuft auf dem Server nicht durch. Konfiguration und Datenbank pruefen."
     fi
+
+    # Ausstehende Migrationen werden gemeldet, aber bewusst NICHT angewandt.
+    # Schemaaenderungen lassen sich nicht zurueckrollen; der Zeitpunkt gehoert
+    # in die Hand des Betreibers, nicht in einen Ausrollvorgang.
+    MIGRATION_STATUS="$(ssh "$DEPLOY_HOST" "cd '$DEPLOY_PATH' && $REMOTE_PHP bot/bin/migrate.php --status" 2>&1 || true)"
+
+    if grep -q "Alle Migrationen sind angewandt" <<< "$MIGRATION_STATUS"; then
+        ok "Datenbankschema ist auf dem aktuellen Stand"
+    elif grep -q "keine Versionsvermerke" <<< "$MIGRATION_STATUS"; then
+        warn "Die Datenbank kennt die Versionstabelle noch nicht"
+        note "Einmalig aufnehmen: ssh $DEPLOY_HOST '$REMOTE_PHP $DEPLOY_PATH/bot/bin/migrate.php --baseline'"
+    elif grep -qE "[0-9]+ Migration\(en\) stehen aus" <<< "$MIGRATION_STATUS"; then
+        warn "$(grep -oE '[0-9]+ Migration\(en\) stehen aus' <<< "$MIGRATION_STATUS")"
+        grep -E '^\s+\[ \]' <<< "$MIGRATION_STATUS" | sed 's/^/      /'
+        note "Anwenden: ssh $DEPLOY_HOST '$REMOTE_PHP $DEPLOY_PATH/bot/bin/migrate.php'"
+        note "Bewusst nicht automatisch - Schemaaenderungen sind nicht zurueckrollbar."
+    else
+        warn "Stand der Migrationen nicht ermittelbar"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
