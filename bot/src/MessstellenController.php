@@ -21,6 +21,10 @@ class MessstellenController
     protected \Psr\Clock\ClockInterface $_clock;
     protected TrendPolicy $_trendPolicy;
 
+    // Zeitzone, in der Zeitpunkte in Meldungen ausgegeben werden. Intern wird
+    // durchgaengig in UTC gerechnet, umgerechnet wird erst bei der Ausgabe.
+    private const DISPLAY_TIMEZONE = 'Europe/Berlin';
+
     // Konstruktor mit Eigenschaften der Messstelle
     public function __construct(\Doctrine\DBAL\Connection $connection, \Monolog\Logger $logger, \WSA\MeasurementApiInterface $api, \Psr\Clock\ClockInterface $clock, TrendPolicy $trendPolicy, int $id, string $name, int $nummer, string $uuid, ?array $AboData = null) {
         // Objekte werden in PHP ohnehin als Handle uebergeben, deshalb ohne Referenz
@@ -36,6 +40,21 @@ class MessstellenController
         $this->nummer = $nummer;
         $this->uuid = $uuid;
         $this->abo_data = $AboData;
+    }
+
+    /**
+     * Formatiert einen Zeitpunkt fuer Meldungen an Benutzer und Protokoll.
+     *
+     * Die Ausgabe erfolgt in Ortszeit und wird ausdruecklich als solche
+     * gekennzeichnet. Ohne Kennzeichnung war nicht erkennbar, ob eine Zeitangabe
+     * in derselben Meldungsfolge UTC oder Ortszeit meint - die uebrigen
+     * Meldungen geben ihre Zeitpunkte als UTC aus.
+     */
+    public function formatLocalTime(\DateTimeInterface $moment): string {
+        $local = \DateTimeImmutable::createFromInterface($moment)
+            ->setTimezone(new \DateTimeZone(self::DISPLAY_TIMEZONE));
+
+        return $local->format('d.m.Y H:i:s') . ' Ortszeit';
     }
 
     // Ermittelt das letzte gespeicherte Messdatum zur Messstelle
@@ -85,11 +104,12 @@ class MessstellenController
     public function ladeUndSpeichereMessungen() {
         $this->_logger->debug("ladeUndSpeichereMessungen()", ['name' => $this->name]);
 
-        //$zeit_lokal = $zeitpunkt_aktuell = $zeitpunkt_aktuell->setTimezone(new DateTimeZone('Europe/Berlin'));
-        echo "Lade Messwerte für {$this->name} seit ".$this->getTimestampLetzteMessung()->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y H:i:s')."\n";
+        $seit = $this->formatLocalTime($this->getTimestampLetzteMessung());
+
+        echo "Lade Messwerte für {$this->name} seit {$seit}\n";
         $this->_logger->info("Lade Messwerte" , [
             'name' => $this->name,
-            'last_date' => $this->getTimestampLetzteMessung()->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y H:i:s')
+            'last_date' => $seit
         ]);
         $this->saveMessungeninDB($this->_api->fetchMeasurements($this->uuid, $this->getTimestampLetzteMessung()->add(new \DateInterval('PT1S'))));
     }
