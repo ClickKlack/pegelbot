@@ -378,14 +378,42 @@ Alle sechs Fremdschlüssel verweisen auf `messstellen`.`id`. Keiner besitzt eine
 Messstelle kann erst gelöscht werden, wenn alle Messwerte, die Zuordnung und sämtliche
 Abonnements entfernt sind.
 
-### 6.4 Bekannte Schema-Altlasten
+### 6.4 Migrationen
+
+Schemaänderungen laufen ausschließlich über nummerierte SQL-Dateien in
+`migrations/`, angewandt durch `bot/bin/migrate.php`. Die Entscheidungslogik steckt
+in `PegelBot\MigrationSet` und ist durch Unit-Tests abgedeckt.
+
+| Aufruf | Wirkung |
+| ------ | ------- |
+| `--status` | zeigt den Stand, ändert nichts |
+| `--dry-run` | zeigt die Anweisungen, führt sie nicht aus |
+| ohne Argument | wendet die ausstehenden an |
+| `--baseline` | einmalig für eine Datenbank, die vor Einführung der Migrationen bestand |
+
+Die Tabelle `schema_migrations` hält Version, **Prüfwert** und Zeitpunkt. Der
+Prüfwert erzwingt, was die Konvention verlangt: Eine bereits angewandte Migration
+wird nicht mehr verändert. Wird die Datei doch bearbeitet, verweigert der Läufer den
+Dienst.
+
+Die Baseline ist der Sonderfall. Sie bildet den Produktionsstand ab und ist dort
+längst wirksam, aber nirgends vermerkt. Findet der Läufer Tabellen ohne
+Versionsvermerke, bricht er ab und verlangt einmalig `--baseline` — das vermerkt sie
+als angewandt, **ohne** sie auszuführen.
+
+**Nicht Teil des Ausrollvorgangs.** `scripts/deploy.sh` meldet ausstehende
+Migrationen und nennt den Befehl, wendet sie aber nicht an. DDL ist in MariaDB nicht
+transaktional und damit nicht zurückrollbar; der Zeitpunkt gehört in die Hand des
+Betreibers.
+
+### 6.5 Bekannte Schema-Altlasten
 
 | Nr. | Schwere | Beschreibung |
 | --- | ------- | ------------ |
-| D1 | **hoch** | **`messwerte`.`messstellen_id` ist `AUTO_INCREMENT`.** Die Spalte ist ein Fremdschlüssel und Teil des zusammengesetzten Primärschlüssels — ein automatischer Zähler ist dort fachlich falsch. Solange der Code den Wert stets ausdrücklich setzt, fällt es nicht auf; ein Einfügevorgang ohne Angabe erzeugt jedoch eine erfundene Messstellennummer und scheitert erst am Fremdschlüssel. |
-| D2 | mittel | **`abonnements_mastodon` ist `latin1` / `latin1_swedish_ci`**, alle anderen Tabellen sind `utf8mb3`. Umlaute in `beschreibung` werden dadurch fehlerhaft gespeichert oder gelesen. |
-| D3 | mittel | Durchgängig `utf8mb3` statt `utf8mb4`. In MariaDB veraltet; Zeichen außerhalb der Basic Multilingual Plane — insbesondere Emojis in Nachrichtenvorlagen — lassen sich nicht speichern. |
-| D4 | mittel | **`messstellen`.`uuid` hat weder Index noch Eindeutigkeitsbedingung**, obwohl es der fachliche Schlüssel zur PEGELONLINE-Schnittstelle ist. Zwei Messstellen könnten dieselbe UUID führen. |
+| ~~D1~~ | **behoben** 14.08.2026 | `AUTO_INCREMENT` auf `messwerte`.`messstellen_id` entfernt, Migration `001`. Auf MariaDB 10.11 eine reine Metadaten-Operation trotz rund 905.000 Zeilen — `ALGORITHM=INSTANT` ist in der Migration ausdrücklich gesetzt, damit ein künftiger Neuaufbau hörbar abbräche statt still zu sperren. |
+| ~~D2~~ | **behoben** 14.08.2026 | `abonnements_mastodon` von `latin1` auf `utf8mb4_unicode_ci`, Migration `002`. |
+| ~~D3~~ | **behoben** 14.08.2026 | Gesamtes Schema auf `utf8mb4_unicode_ci`, Migration `002`. Tabellen mit Zeichenspalten über `CONVERT TO`, `messwerte` über `DEFAULT CHARACTER SET` — die Tabelle hat keine Zeichenspalten, es gab nichts umzuwandeln. |
+| ~~D4~~ | **behoben** 14.08.2026 | Eindeutigkeitsschlüssel `uuid_uq` auf `messstellen`.`uuid`, Migration `003`. |
 | D5 | niedrig | Der Tabellenname `messstelllen_abo_zuordnung` enthält einen Tippfehler (drei „l"). |
 | D6 | niedrig | `aktiv` ist als `int(1) unsigned` statt `tinyint(1)` modelliert, `update_active` dagegen als `tinyint(1)` — uneinheitlich. Der Code prüft ausschließlich `aktiv = 1`; jeder andere Wert wirkt wie „inaktiv". |
 | D7 | niedrig | Der Indexname `abo_messstellen_id_fk3` wird in `abonnements_bluesky` **und** `abonnements_mastodon` verwendet. Zulässig, da Indexnamen tabellenlokal sind, aber ein Kopierfehler. |

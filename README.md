@@ -76,11 +76,20 @@ Anschließend die Zugangsdaten der Datenbank sowie den gewünschten Loglevel ein
 
 > Die Datei enthält Geheimnisse und wird **nicht** versioniert.
 
-Datenbankschema einspielen:
+Datenbankschema anlegen:
 
 ```bash
-mysql -u <benutzer> -p <datenbank> < migrations/000_baseline_schema.sql
+php bot/bin/migrate.php
 ```
+
+Bei einer **bestehenden** Datenbank, die vor Einführung der Migrationen angelegt
+wurde, einmalig vorher:
+
+```bash
+php bot/bin/migrate.php --baseline
+```
+
+Das vermerkt die Baseline als angewandt, ohne sie auszuführen.
 
 ---
 
@@ -152,16 +161,20 @@ Kanäle, die keine Bilder verschicken können, überschreiben `supportsTrend()` 
 Für einen echten Botlauf ohne Zugriff auf die Produktivdatenbank:
 
 ```bash
-mariadb -e "CREATE DATABASE pegelbot_local CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci;
+mariadb -e "CREATE DATABASE pegelbot_local CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
             CREATE USER 'pegelbot_local'@'localhost' IDENTIFIED BY '<kennwort>';
             GRANT ALL PRIVILEGES ON pegelbot_local.* TO 'pegelbot_local'@'localhost';"
+```
 
-mariadb pegelbot_local < migrations/000_baseline_schema.sql
+Danach in `bot/config/pegelbot-config.php` auf diese Datenbank zeigen, dann:
+
+```bash
+php bot/bin/migrate.php
 mariadb pegelbot_local < tools/local-demo-data.sql
 ```
 
-Danach in `bot/config/pegelbot-config.php` auf diese Datenbank zeigen und den Bot
-starten.
+Die Baseline wird also über den Migrationsläufer eingespielt, nicht von Hand — so
+entsteht örtlich derselbe Schemastand wie produktiv.
 
 > Die Demodaten enthalten die drei echten Messstellen, aber **keine Abonnements**.
 > Ein Lauf holt damit echte Messwerte von PEGELONLINE und durchläuft alle drei
@@ -169,6 +182,26 @@ starten.
 > Nachrichten.
 
 Das Skript ist wiederholbar und räumt vorher auf.
+
+---
+
+## Datenbankmigrationen
+
+Schemaänderungen laufen über nummerierte SQL-Dateien in `migrations/`.
+
+```bash
+php bot/bin/migrate.php --status     # Stand anzeigen, nichts ändern
+php bot/bin/migrate.php --dry-run    # Anweisungen zeigen, nicht ausführen
+php bot/bin/migrate.php              # ausstehende anwenden
+```
+
+Angewandte Migrationen stehen mit Prüfwert in `schema_migrations`. Wird eine bereits
+angewandte Datei nachträglich verändert, verweigert der Läufer den Dienst — die
+Änderung gehört in eine neue Migration.
+
+> Das Ausrollskript **meldet** ausstehende Migrationen, wendet sie aber nicht an.
+> Schemaänderungen sind in MariaDB nicht zurückrollbar; der Zeitpunkt gehört in die
+> Hand des Betreibers.
 
 ---
 
