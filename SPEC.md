@@ -191,8 +191,9 @@ Messzeitpunkt gesetzt.
 Ermittelt je Messstelle das Minimum und Maximum aller Messwerte seit der letzten
 Ganglinien-Versendung.
 
-**Nachtsperre:** Läuft die Prüfung zu einer Stunde `< 6` oder `> 22`, wird ohne Versand
-abgebrochen.
+**Nachtsperre:** Zwischen **22:00 und 05:59 Ortszeit** (`Europe/Berlin`) wird nicht
+verschickt. Das Fenster ist halboffen: ab 22:00:00 gesperrt, ab 06:00:00 wieder frei.
+Zeitzone und Grenzen sind Konstruktorwerte von `PegelBot\TrendPolicy`.
 
 **Auslöseregel:**
 
@@ -531,7 +532,7 @@ nicht mehr in Frage.
 | --- | ------- | ---------- | ------------ |
 | ~~B1~~ | **behoben** 13.08.2026 | `src/wsa/PegelOnlineApi.php` | `catch (ServerException $e)` ohne passenden `use`-Import: Der Name löste im Namensraum `WSA` auf und traf nie zu, jede 5xx-Antwort beendete den kompletten Lauf. Beide Methoden fangen die Ausnahme jetzt, protokollieren sie und liefern ein leeres Ergebnis; der Lauf verarbeitet die übrigen Messstellen weiter. Beim nächsten Lauf wird ab dem zuletzt gespeicherten Zeitpunkt nachgeholt. Durch fünf Tests abgedeckt. |
 | ~~B2~~ | **behoben** 14.08.2026 | `src/MessstellenController.php` | Der Zeitpunkt der letzten Zustellung wurde bedingungslos fortgeschrieben, auch wenn jeder Versand mit einer Ausnahme endete — die Meldung galt als erledigt und war verloren. Die Entscheidung liegt jetzt in `PegelBot\DeliveryOutcome` und unterscheidet drei Fälle: **kein Empfänger** (fortschreiben, Normalfall bei Messstellen ohne aktive Abonnements), **mindestens einer erfolgreich** (fortschreiben), **Empfänger vorhanden und alle gescheitert** (stehen lassen, Warnung ins Protokoll, nächster Lauf versucht es erneut). Gilt für Benachrichtigungen und Ganglinien gleichermaßen. Durch elf Unit-Tests abgedeckt.
-| B3 | mittel | `src/MessstellenController.php:255` | Die Nachtsperre vergleicht die **UTC**-Stunde gegen die als Ortszeit gedachten Grenzen 6 und 22. Effektiv sperrt sie in der Sommerzeit von 00 bis 08 Uhr Ortszeit. |
+| ~~B3~~ | **behoben** 14.08.2026 | `src/TrendPolicy.php` | Die Nachtsperre wertete die **UTC**-Stunde aus, obwohl die Grenzen als Ortszeit gemeint sind, und verglich mit `> 22` statt `>= 22`. Real gesperrt war dadurch 01:00 bis 07:59 Ortszeit statt 22:00 bis 05:59 — der Bot verschickte Ganglinien mitten in der Nacht und schwieg dafür am Morgen. Die Zeitzone ist jetzt Konstruktorwert und in `bootstrap.php` ausdrücklich auf `Europe/Berlin` gesetzt; das Fenster ist halboffen von `quietFromHour` einschließlich bis `quietUntilHour` ausschließlich. |
 | B4 | mittel | `src/wsa/WSAServices.php:59` | Das Ergebnis von `json_decode()` wird nicht geprüft. Bei ungültigem JSON iteriert die Schleife über `null`. |
 | ~~B5~~ | **entkräftet** | — | Vermutet wurde ein möglicher `NULL`-Wert bei `letzter_zeitpunkt`. Das Schema weist die Spalte als `datetime NOT NULL` aus; der Fall kann nicht eintreten. |
 | B6 | mittel | `src/MessstellenController.php:64` | Einfügen der Messwerte ohne Transaktion. Der Primärschlüssel (`messstellen_id`, `zeitpunkt`) schließt Doppeleinträge zwar aus, wandelt sie aber in eine **Verletzung der Eindeutigkeitsbedingung** um. Diese wird nicht gefangen und beendet den Lauf; die zuvor eingefügten Werte bleiben als Teilzustand zurück. Auslöser: überlappende Läufe oder wiederholte Zeitstempel in einer API-Antwort. |

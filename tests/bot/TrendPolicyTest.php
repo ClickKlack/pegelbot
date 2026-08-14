@@ -19,72 +19,91 @@ final class TrendPolicyTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    //  Nachtsperre - Stand vor Behebung von B3
+    //  Nachtsperre - gesperrt ist 22:00 bis 05:59 Ortszeit
     // ------------------------------------------------------------------
 
-    #[DataProvider('quietHoursInUtc')]
-    public function testQuietTimeIsEvaluatedInUtc(string $time, bool $expected): void
+    #[DataProvider('quietHoursLocalTime')]
+    public function testQuietWindowInLocalTime(string $time, bool $expected): void
     {
-        $policy = new TrendPolicy('UTC');
+        $policy = new TrendPolicy('Europe/Berlin');
 
-        self::assertSame($expected, $policy->isQuietTime($this->at($time)));
+        self::assertSame($expected, $policy->isQuietTime($this->at($time, 'Europe/Berlin')));
     }
 
     /** @return iterable<string, array{string, bool}> */
-    public static function quietHoursInUtc(): iterable
+    public static function quietHoursLocalTime(): iterable
     {
-        yield 'Mitternacht'  => ['2026-08-14 00:00:00', true];
-        yield '5 Uhr'        => ['2026-08-14 05:59:00', true];
-        yield '6 Uhr'        => ['2026-08-14 06:00:00', false];
-        yield 'Mittag'       => ['2026-08-14 12:00:00', false];
-        yield '22 Uhr'       => ['2026-08-14 22:00:00', false];
-        yield '23 Uhr'       => ['2026-08-14 23:00:00', true];
+        yield 'Mitternacht'          => ['2026-08-14 00:00:00', true];
+        yield '5:59 Uhr'             => ['2026-08-14 05:59:00', true];
+        yield '6 Uhr, Sperre endet'  => ['2026-08-14 06:00:00', false];
+        yield 'Mittag'               => ['2026-08-14 12:00:00', false];
+        yield '21:59 Uhr'            => ['2026-08-14 21:59:00', false];
+        yield '22 Uhr, Sperre beginnt' => ['2026-08-14 22:00:00', true];
+        yield '23 Uhr'               => ['2026-08-14 23:00:00', true];
     }
 
     /**
-     * Haelt Befund B3 fest: Die Grenzen 6 und 22 sind als Ortszeit gemeint,
-     * ausgewertet wird aber die UTC-Stunde. Diese Tests werden mit der Behebung
-     * umgedreht.
+     * Befund B3, erster Teil: Die Grenzen sind als Ortszeit gemeint, ausgewertet
+     * wurde aber die UTC-Stunde. In der Sommerzeit liegen dazwischen zwei
+     * Stunden.
      */
-    public function testCurrentlyNotQuietAtElevenPmLocalTime(): void
+    public function testQuietAtElevenPmLocalTime(): void
     {
-        $policy = new TrendPolicy('UTC');
+        $policy = new TrendPolicy('Europe/Berlin');
 
-        // 23 Uhr Ortszeit im Sommer entspricht 21 Uhr UTC
-        self::assertFalse($policy->isQuietTime($this->at('2026-08-14 23:00:00', 'Europe/Berlin')));
+        // 23 Uhr Ortszeit im Sommer entspricht 21 Uhr UTC - frueher Sendezeit
+        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 23:00:00', 'Europe/Berlin')));
     }
 
-    public function testCurrentlyQuietAtSevenAmLocalTime(): void
+    public function testNotQuietAtSevenAmLocalTime(): void
     {
-        $policy = new TrendPolicy('UTC');
+        $policy = new TrendPolicy('Europe/Berlin');
 
-        // 7 Uhr Ortszeit im Sommer entspricht 5 Uhr UTC
-        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 07:00:00', 'Europe/Berlin')));
+        // 7 Uhr Ortszeit im Sommer entspricht 5 Uhr UTC - frueher Nachtsperre
+        self::assertFalse($policy->isQuietTime($this->at('2026-08-14 07:00:00', 'Europe/Berlin')));
     }
 
     /**
-     * Zweiter Teil von B3: Der Vergleich lautet "> 22" statt ">=". Die Stunde 22
-     * ist dadurch nicht gesperrt, obwohl der Kommentar "22-6 Uhr" sagt.
+     * Befund B3, zweiter Teil: Der Vergleich lautete "> 22" statt ">= 22".
+     * Die Stunde 22 war dadurch nicht gesperrt, obwohl der Kommentar seit jeher
+     * "22-6 Uhr" sagte.
      */
-    public function testQuietCurrentlyStartsAtElevenNotTen(): void
+    public function testQuietStartsAtTenPmSharp(): void
     {
-        $policy = new TrendPolicy('UTC');
+        $policy = new TrendPolicy('Europe/Berlin');
 
-        self::assertFalse($policy->isQuietTime($this->at('2026-08-14 22:30:00')));
-        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 23:30:00')));
+        self::assertFalse($policy->isQuietTime($this->at('2026-08-14 21:59:59', 'Europe/Berlin')));
+        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 22:00:00', 'Europe/Berlin')));
     }
 
-    public function testTimezoneIsConfigurable(): void
+    public function testQuietTimeHonoursWinterTimeOffset(): void
     {
-        self::assertTrue((new TrendPolicy('Europe/Berlin'))
-            ->isQuietTime($this->at('2026-08-14 23:30:00', 'Europe/Berlin')));
+        $policy = new TrendPolicy('Europe/Berlin');
+
+        // Im Winter betraegt der Versatz nur eine Stunde
+        self::assertTrue($policy->isQuietTime($this->at('2026-01-15 22:30:00', 'Europe/Berlin')));
+        self::assertFalse($policy->isQuietTime($this->at('2026-01-15 12:00:00', 'Europe/Berlin')));
+    }
+
+    /**
+     * Ein in UTC angegebener Zeitpunkt muss dasselbe Ergebnis liefern wie
+     * derselbe Moment in Ortszeit - die Umrechnung passiert in der Klasse.
+     */
+    public function testUtcInputIsConvertedBeforeComparison(): void
+    {
+        $policy = new TrendPolicy('Europe/Berlin');
+
+        // 21:00 UTC im Sommer ist 23:00 Ortszeit
+        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 21:00:00')));
+        // 05:00 UTC im Sommer ist 07:00 Ortszeit
+        self::assertFalse($policy->isQuietTime($this->at('2026-08-14 05:00:00')));
     }
 
     public function testQuietHoursAreConfigurable(): void
     {
         $policy = new TrendPolicy('UTC', quietFromHour: 20, quietUntilHour: 8);
 
-        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 21:00:00')));
+        self::assertTrue($policy->isQuietTime($this->at('2026-08-14 20:00:00')));
         self::assertTrue($policy->isQuietTime($this->at('2026-08-14 07:00:00')));
         self::assertFalse($policy->isQuietTime($this->at('2026-08-14 12:00:00')));
     }

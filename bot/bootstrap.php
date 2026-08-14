@@ -45,10 +45,11 @@ $api = new WSA\PegelOnlineApi(
 // Uhr und Regelwerk der Ganglinien. Beides wird hereingereicht, damit die
 // Fachlogik nicht selbst "jetzt" bestimmt und dadurch pruefbar bleibt.
 //
-// Die Zeitzone steht bewusst auf UTC: Das entspricht dem bisherigen Verhalten.
-// Gemeint sind die Grenzen 6 und 22 als Ortszeit - siehe Befund B3.
+// Die Zeitzone gilt fuer die Nachtsperre und ist ausdruecklich angegeben, weil
+// genau an dieser Stelle Befund B3 lag: Frueher wurde in UTC gerechnet, obwohl
+// die Grenzen als Ortszeit gemeint sind.
 $clock = new PegelBot\SystemClock();
-$trendPolicy = new PegelBot\TrendPolicy('UTC');
+$trendPolicy = new PegelBot\TrendPolicy('Europe/Berlin');
 
 // Datenbankverbindung
 $connection = DriverManager::getConnection($dbParams);

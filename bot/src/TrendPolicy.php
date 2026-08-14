@@ -29,14 +29,14 @@ final class TrendPolicy
 
     /**
      * @param string $timezone       Zeitzone, in der die Nachtsperre gilt
-     * @param int    $quietFromHour  ab dieser Stunde wird nicht mehr verschickt
-     * @param int    $quietUntilHour bis zu dieser Stunde wird nicht verschickt
+     * @param int    $quietFromHour  ab dieser Stunde einschliesslich gesperrt
+     * @param int    $quietUntilHour bis zu dieser Stunde ausschliesslich gesperrt
      * @param int    $minimumSpread  noetige Schwankung in Zentimetern
      * @param int    $minimumDays    Mindestabstand in Tagen bei Schwankung
      * @param int    $maximumDays    Abstand, ab dem ohne Schwankung verschickt wird
      */
     public function __construct(
-        string $timezone = 'UTC',
+        string $timezone = 'Europe/Berlin',
         private readonly int $quietFromHour = 22,
         private readonly int $quietUntilHour = 6,
         private readonly int $minimumSpread = 50,
@@ -49,9 +49,18 @@ final class TrendPolicy
     /**
      * Liegt der Zeitpunkt in der Nachtsperre?
      *
-     * Die Grenzen werden in der konfigurierten Zeitzone ausgewertet. Genau hier
-     * liegt Befund B3: Ausgewertet wird die UTC-Stunde, obwohl 6 und 22 als
-     * Ortszeit gemeint sind. Die Behebung folgt gesondert.
+     * Das Fenster ist halboffen: ab quietFromHour einschliesslich bis
+     * quietUntilHour ausschliesslich. Mit den Vorgabewerten also von 22:00:00
+     * bis 05:59:59 gesperrt, von 06:00 bis 21:59 wird verschickt.
+     *
+     * Hier lag Befund B3, und zwar doppelt:
+     *
+     *   - Die Stunde wurde in UTC ausgewertet, obwohl die Grenzen als Ortszeit
+     *     gemeint sind.
+     *   - Der Vergleich lautete "> quietFromHour" statt ">=". Die Stunde 22 war
+     *     damit nicht gesperrt, obwohl der Kommentar seit jeher "22-6 Uhr" sagte.
+     *
+     * Beides zusammen ergab real eine Sperre von 01:00 bis 07:59 Ortszeit.
      */
     public function isQuietTime(DateTimeInterface $now): bool
     {
@@ -59,7 +68,7 @@ final class TrendPolicy
             ->setTimezone($this->timezone)
             ->format('G');
 
-        return $hour < $this->quietUntilHour || $hour > $this->quietFromHour;
+        return $hour >= $this->quietFromHour || $hour < $this->quietUntilHour;
     }
 
     /**
